@@ -16,14 +16,20 @@ function App() {
 
   const [session, setSession] = useState<Session | null>(null)
   const [recommendations, setRecommendations] = useState<MethodRecommendation[]>([])
+  const [ruleRanking, setRuleRanking] = useState<string[]>([])
+  const [adjustmentNote, setAdjustmentNote] = useState('')
   const [activeRun, setActiveRun] = useState<MethodRun | null>(null)
   const [tab, setTab] = useState<Tab>('select')
-  const [provider, setProvider] = useState('claude')
+  // '' = no provider chosen yet — neither button should look selected until
+  // the user actually picks one (that pick is what kicks off the AI call).
+  const [provider, setProvider] = useState('')
   const [selectedIdeaIds, setSelectedIdeaIds] = useState<number[]>([])
   const [detailIdea, setDetailIdea] = useState<Idea | null>(null)
 
   const [creatingSession, setCreatingSession] = useState(false)
   const [sessionError, setSessionError] = useState<string | null>(null)
+  const [recommending, setRecommending] = useState(false)
+  const [recommendError, setRecommendError] = useState<string | null>(null)
   const [starting, setStarting] = useState(false)
   const [answering, setAnswering] = useState(false)
   const [runError, setRunError] = useState<string | null>(null)
@@ -48,13 +54,34 @@ function App() {
     try {
       const s = await api.createSession(payload)
       setSession(s)
-      const recs = await api.recommendMethods(s.id, provider)
-      setRecommendations(recs)
       setTab('select')
     } catch (e) {
       setSessionError(e instanceof Error ? e.message : String(e))
     } finally {
       setCreatingSession(false)
+    }
+  }
+
+  // Fires when the user picks (or switches) the LLM provider on the Method
+  // Selector screen — that pick is the actual trigger for the AI call that
+  // writes the recommendation rationale, so it's what should show "thinking".
+  async function handleSelectProvider(p: string) {
+    if (!session) return
+    setProvider(p)
+    setRecommending(true)
+    setRecommendError(null)
+    setRecommendations([])
+    setRuleRanking([])
+    setAdjustmentNote('')
+    try {
+      const res = await api.recommendMethods(session.id, p)
+      setRecommendations(res.recommendations)
+      setRuleRanking(res.rule_ranking)
+      setAdjustmentNote(res.adjustment_note)
+    } catch (e) {
+      setRecommendError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setRecommending(false)
     }
   }
 
@@ -74,12 +101,12 @@ function App() {
     }
   }
 
-  async function handleAnswer(stepIndex: number, answer: string) {
+  async function handleAnswer(stepIndex: number, answer: string, force = false) {
     if (!activeRun) return
     setAnswering(true)
     setRunError(null)
     try {
-      const result = await api.answerStep(activeRun.id, stepIndex, answer)
+      const result = await api.answerStep(activeRun.id, stepIndex, answer, force)
       setActiveRun(result.method_run)
       setRunFeedback(result.accepted ? null : result.feedback)
       if (result.ideas) {
@@ -155,9 +182,13 @@ function App() {
             {tab === 'select' && (
             <MethodSelectorView
               recommendations={recommendations}
+              ruleRanking={ruleRanking}
+              adjustmentNote={adjustmentNote}
               providersHealth={providersHealth}
               provider={provider}
-              onProviderChange={setProvider}
+              onProviderChange={handleSelectProvider}
+              recommending={recommending}
+              recommendError={recommendError}
               onStart={handleStartMethod}
               starting={starting}
             />

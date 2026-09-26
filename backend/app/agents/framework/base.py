@@ -26,6 +26,15 @@ STEP_SYSTEM_PROMPT_TEMPLATE = """你是「{method_label}」發想引導流程裡
 
 一律使用繁體中文回答。只回傳符合 JSON schema 的結構化輸出，不要有多餘文字或客套話。"""
 
+# Appended to the step system prompt when the user force-submits an answer the
+# agent already rejected once. The relevance gate is an escape hatch away at
+# that point, so stop judging and just mine whatever was written for insight.
+FORCE_ACCEPT_INSTRUCTION = """補充指示（本次強制送出）：
+使用者已經確認要用這個回答繼續，不需要你再做切題性審核。
+請一律把 is_relevant 設為 true、clarification 留空字串，
+即使回答很簡短、很跳、或看起來離題，也要盡力從裡面挖出可用的洞察，
+照樣產生 analysis 與 1~3 個 idea_fragments。"""
+
 STEP_OUTPUT_SCHEMA = {
     "type": "object",
     "properties": {

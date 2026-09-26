@@ -12,8 +12,9 @@ def session_to_dict(s: IdeationSession) -> dict:
         "domain_pref": s.domain_pref,
         "constraints_text": s.constraints_text,
         "has_clear_problem": s.has_clear_problem,
+        "clear_problem_text": s.clear_problem_text,
         "has_existing_product": s.has_existing_product,
-        "is_tech_driven": s.is_tech_driven,
+        "existing_product_text": s.existing_product_text,
         "created_at": s.created_at.isoformat(),
     }
 

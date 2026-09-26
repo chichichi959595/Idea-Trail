@@ -1,10 +1,10 @@
-import { useState } from 'react'
-import { METHOD_LABELS, METHOD_TUTORIALS, type MethodRun, type MethodStep } from '../types'
+import { useEffect, useState } from 'react'
+import { getStepTimerSeconds, METHOD_LABELS, METHOD_TUTORIALS, type MethodRun, type MethodStep } from '../types'
 import { Body, Button, Headline, Meta, Panel, SectionLabel, Support, Tag, textareaClass, ThinkingIndicator } from './ui'
 
 interface Props {
   run: MethodRun
-  onAnswer: (stepIndex: number, answer: string) => void
+  onAnswer: (stepIndex: number, answer: string, force?: boolean) => void
   submitting: boolean
   error: string | null
   feedback: string | null
@@ -86,6 +86,7 @@ export function FrameworkRunView({ run, onAnswer, submitting, error, feedback, o
           submitting={submitting}
           error={error}
           feedback={feedback}
+          timerSeconds={getStepTimerSeconds(run.method_name, currentStep.step_name)}
         />
       )}
 
@@ -105,14 +106,29 @@ function AnswerForm({
   submitting,
   error,
   feedback,
+  timerSeconds,
 }: {
   step: MethodStep
-  onAnswer: (stepIndex: number, answer: string) => void
+  onAnswer: (stepIndex: number, answer: string, force?: boolean) => void
   submitting: boolean
   error: string | null
   feedback: string | null
+  timerSeconds: number | null
 }) {
   const [answer, setAnswer] = useState('')
+  const remaining = useCountdown(timerSeconds)
+  const timeUp = timerSeconds !== null && remaining === 0
+
+  // The instant the countdown hits 0, lock the input and move on: whatever
+  // was typed gets sent, and an empty box just skips this step — either way
+  // the flow keeps going without waiting for the user to click 送出.
+  // Sent as a forced answer: the input is locked from here on, so a relevance
+  // rejection would leave the run stuck with no way to revise.
+  useEffect(() => {
+    if (!timeUp || submitting) return
+    onAnswer(step.step_index, answer.trim(), true)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [timeUp])
 
   return (
     <form
@@ -124,13 +140,31 @@ function AnswerForm({
       }}
     >
       <Meta className="mb-2 block">{step.step_name}</Meta>
-      <Headline className="mb-5">{step.question_shown}</Headline>
+      <div className="mb-5">
+        <Headline>{step.question_shown}</Headline>
+        {timerSeconds !== null && (
+          <span
+            aria-live="polite"
+            className={`mt-3 inline-flex shrink-0 items-center gap-1.5 border-2 px-3 py-1 text-sm font-bold tabular-nums ${
+              timeUp ? 'border-accent text-accent' : 'border-foreground/30 text-foreground/70'
+            }`}
+          >
+            <span aria-hidden>⏱</span>
+            {timeUp ? '時間到！' : `${remaining} 秒`}
+          </span>
+        )}
+      </div>
 
       {feedback && (
-        <p className="border-accent bg-accent/5 text-foreground mb-4 border-2 px-4 py-3 text-sm font-medium">
-          <span className="text-accent mr-1 font-bold">AI 覺得這個回答文不對題：</span>
-          {feedback}
-        </p>
+        <div className="border-accent bg-accent/5 text-foreground mb-4 border-2 px-4 py-3">
+          <p className="text-sm font-medium">
+            <span className="text-accent mr-1 font-bold">AI 覺得這個回答文不對題：</span>
+            {feedback}
+          </p>
+          <p className="text-foreground/60 mt-2 text-xs">
+            如果你覺得這個回答沒問題，可以按「強制送出」跳過 AI 審核直接往下走。
+          </p>
+        </div>
       )}
 
       <textarea
@@ -139,6 +173,7 @@ function AnswerForm({
         onChange={(e) => setAnswer(e.target.value)}
         placeholder="輸入你的回答…"
         autoFocus
+        disabled={timeUp}
       />
       {error && (
         <p className="border-accent bg-accent/5 text-accent mt-4 border-2 px-4 py-3 text-sm font-bold">
@@ -146,11 +181,40 @@ function AnswerForm({
         </p>
       )}
       <div className="mt-5 flex flex-wrap items-center gap-4">
-        <Button type="submit" disabled={submitting || !answer.trim()} className="w-full sm:w-auto">
+        <Button type="submit" disabled={timeUp || submitting || !answer.trim()} className="w-full sm:w-auto">
           送出
         </Button>
+        {/* Only offered after the AI has actually pushed back — it's an escape
+            hatch from a bad judgement call, not a general review bypass. */}
+        {feedback && (
+          <Button
+            type="button"
+            variant="secondary"
+            disabled={timeUp || submitting || !answer.trim()}
+            onClick={() => onAnswer(step.step_index, answer.trim(), true)}
+            className="w-full sm:w-auto"
+          >
+            強制送出
+          </Button>
+        )}
         {submitting && <ThinkingIndicator />}
       </div>
     </form>
   )
+}
+
+// Resets to `seconds` whenever it changes, then ticks down to 0 and stops.
+function useCountdown(seconds: number | null): number {
+  const [remaining, setRemaining] = useState(seconds ?? 0)
+
+  useEffect(() => {
+    if (seconds === null) return
+    setRemaining(seconds)
+    const id = setInterval(() => {
+      setRemaining((r) => (r > 0 ? r - 1 : 0))
+    }, 1000)
+    return () => clearInterval(id)
+  }, [seconds])
+
+  return remaining
 }

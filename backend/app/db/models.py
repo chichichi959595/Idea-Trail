@@ -27,8 +27,11 @@ class IdeationSession(Base):
     domain_pref: Mapped[Optional[str]] = mapped_column(Text, default=None)
     constraints_text: Mapped[Optional[str]] = mapped_column(Text, default=None)
     has_clear_problem: Mapped[Optional[bool]] = mapped_column(default=None)
+    clear_problem_text: Mapped[Optional[str]] = mapped_column(Text, default=None)
+    """What the problem actually is, asked only when has_clear_problem is true."""
     has_existing_product: Mapped[Optional[bool]] = mapped_column(default=None)
-    is_tech_driven: Mapped[Optional[bool]] = mapped_column(default=None)
+    existing_product_text: Mapped[Optional[str]] = mapped_column(Text, default=None)
+    """Which product/topic they want to rework, asked only when has_existing_product is true."""
     created_at: Mapped[dt.datetime] = mapped_column(default=_now)
 
     recommendations: Mapped[list["MethodRecommendation"]] = relationship(

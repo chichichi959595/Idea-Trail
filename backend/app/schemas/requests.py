@@ -12,8 +12,9 @@ class CreateSessionRequest(BaseModel):
     domain_pref: Optional[str] = None
     constraints_text: Optional[str] = None
     has_clear_problem: Optional[bool] = None
+    clear_problem_text: Optional[str] = None
     has_existing_product: Optional[bool] = None
-    is_tech_driven: Optional[bool] = None
+    existing_product_text: Optional[str] = None
 
 
 class CreateMethodRunRequest(BaseModel):
@@ -24,6 +25,7 @@ class CreateMethodRunRequest(BaseModel):
 class AnswerStepRequest(BaseModel):
     step_index: int
     answer: str
+    force: bool = False
 
 
 class SynthesizeRequest(BaseModel):

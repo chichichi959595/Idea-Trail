@@ -6,8 +6,9 @@ export interface Session {
   domain_pref: string | null
   constraints_text: string | null
   has_clear_problem: boolean | null
+  clear_problem_text: string | null
   has_existing_product: boolean | null
-  is_tech_driven: boolean | null
+  existing_product_text: string | null
   created_at: string
 }
 
@@ -16,6 +17,14 @@ export interface MethodRecommendation {
   method: string
   rank: number
   rationale: string
+}
+
+export interface MethodRecommendationResult {
+  recommendations: MethodRecommendation[]
+  /** What the rules alone ranked, before the AI adjusted it. */
+  rule_ranking: string[]
+  /** The AI's own note on what it changed and why. */
+  adjustment_note: string
 }
 
 export interface MethodStep {
@@ -72,9 +81,9 @@ export const METHOD_LABELS: Record<string, string> = {
   reverse_thinking: '逆向思考',
   analogy: '類比法',
   capability_mapping: '能力對應問題',
-  how_might_we: 'HMW（How Might We）',
+  how_might_we: 'HMW',
   mashup: '混搭法（Mash-up）',
-  random_input: '隨機刺激（Random Input）',
+  random_input: 'RANDOM INPUT',
   crazy_8s: 'Crazy 8s',
 }
 
@@ -90,7 +99,7 @@ export const METHOD_DESCRIPTIONS: Record<string, string> = {
   how_might_we: '把觀察到的問題改寫成一句「How might we...?」，再針對這句話大量發想解法。',
   mashup: '分別列出對象、痛點、技術三份清單，再隨機強迫組合出新方向。',
   random_input: '抽一個完全無關的隨機詞彙，強迫把它跟你的主題湊在一起，逼出意外的連結。',
-  crazy_8s: '限時、限量、不准評論自己，快速衝出一堆點子，越後面擠出來的往往越有突破性。',
+  crazy_8s: '針對一個具體問題，每 30 秒衝一個解法，8 個解法不准評論自己，越後面擠出來的往往越有突破性。',
 }
 
 export interface MethodTutorial {
@@ -138,12 +147,18 @@ export const METHOD_TUTORIALS: Record<string, MethodTutorial> = {
   },
   random_input: {
     intro: '抽一個跟主題完全無關的隨機詞彙，強迫自己把它跟主題湊在一起，用不合理的連結逼出跳脫慣性的點子，適合已經有大方向、只是想不出新意的情況。',
-    howTo: '先講你們的主題方向，接著系統會給一個隨機詞彙，想辦法硬把它跟主題湊在一起想出一個點子，重複兩次後，挑一個比較有潛力的延伸。',
+    howTo: '先講你們的主題方向，接著系統會給一個隨機詞彙，想辦法硬把它跟主題湊在一起想出一個點子，重複三次後，挑一個比較有潛力的延伸。',
   },
   crazy_8s: {
-    intro: '極短時間內逼自己生出大量點子，規則是不准評論、不准刪除、先求數量——前幾個通常是老掉牙的常識，但越後面擠出來的往往越有突破性。',
-    howTo: '先講主題，接著分三輪快速寫下點子（3 個、3 個、2 個），每一輪都刻意換一個角度切入，不要回頭修改或刪除前面寫的。',
+    intro: '針對「同一個」具體問題，逼自己在極短時間內畫出 8 個不同的解法，規則是不准評論、不准刪除、先求數量——前幾個通常是老掉牙的常識，但越後面擠出來的往往越有突破性。',
+    howTo: '先講清楚要解決的具體問題，接著每一步都有 30 秒的限時，針對同一個問題寫下一個新解法（不是點子，是解法），共 8 步，不要回頭修改或刪除前面寫的。',
   },
+}
+
+// Per-step countdown in seconds; only Crazy 8s's solution steps use this.
+export function getStepTimerSeconds(methodName: string, stepName: string): number | null {
+  if (methodName === 'crazy_8s' && stepName.startsWith('solution_')) return 30
+  return null
 }
 
 export const IMPLEMENTED_METHODS = new Set([

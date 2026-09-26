@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session as DbSession
 
 from app.agents.framework import get_framework_agent
+from app.agents.framework.base import FORCE_ACCEPT_INSTRUCTION
 from app.api.serializers import idea_to_dict, method_run_to_dict
 from app.db.llm_log import log_llm_call
 from app.db.models import Idea, IdeationSession, MethodRun, MethodStep
@@ -79,6 +80,7 @@ async def answer_step(run_id: int, payload: AnswerStepRequest, db: DbSession = D
 
     session = db.get(IdeationSession, run.session_id)
     agent = get_framework_agent(run.method_name)
+    provider = get_provider(run.provider)
 
     current_step = next(
         (s for s in run.steps if s.step_index == run.current_step_index), None
@@ -86,46 +88,57 @@ async def answer_step(run_id: int, payload: AnswerStepRequest, db: DbSession = D
     if current_step is None:
         raise HTTPException(500, "current step record is missing")
 
-    prior_steps = [s for s in run.steps if s.step_index < run.current_step_index]
-    system_prompt, user_prompt, schema = agent.build_step_prompt(
-        run.current_step_index, session, prior_steps, payload.answer
-    )
+    answer_text = payload.answer.strip()
+    if answer_text:
+        prior_steps = [s for s in run.steps if s.step_index < run.current_step_index]
+        system_prompt, user_prompt, schema = agent.build_step_prompt(
+            run.current_step_index, session, prior_steps, payload.answer
+        )
+        if payload.force:
+            # 強制送出: the user saw the AI's complaint and chose to keep this
+            # answer anyway, so drop the relevance gate for this call.
+            system_prompt = f"{system_prompt}\n\n{FORCE_ACCEPT_INSTRUCTION}"
 
-    try:
-        provider = get_provider(run.provider)
-        result = await complete_with_quality_guard(
-            provider,
+        try:
+            result = await complete_with_quality_guard(
+                provider,
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                json_schema=schema,
+                model=run.model,
+            )
+        except (ProviderError, ValueError) as exc:
+            raise HTTPException(502, str(exc)) from exc
+
+        log_llm_call(
+            db,
+            result,
             system_prompt=system_prompt,
             user_prompt=user_prompt,
-            json_schema=schema,
-            model=run.model,
+            session_id=run.session_id,
+            related_step_id=current_step.id,
         )
-    except (ProviderError, ValueError) as exc:
-        raise HTTPException(502, str(exc)) from exc
 
-    log_llm_call(
-        db,
-        result,
-        system_prompt=system_prompt,
-        user_prompt=user_prompt,
-        session_id=run.session_id,
-        related_step_id=current_step.id,
-    )
+        structured = result.structured or {}
+        if not payload.force and not structured.get("is_relevant", True):
+            # Off-topic/empty answer — leave the step untouched so the same
+            # step_index can be retried, and tell the user why.
+            db.commit()
+            return {
+                "accepted": False,
+                "feedback": structured.get("clarification") or "這個回答看起來文不對題，可以再具體說明一下嗎？",
+                "method_run": method_run_to_dict(run),
+                "ideas": None,
+            }
 
-    structured = result.structured or {}
-    if not structured.get("is_relevant", True):
-        # Off-topic/empty answer — leave the step untouched so the same
-        # step_index can be retried, and tell the user why.
-        db.commit()
-        return {
-            "accepted": False,
-            "feedback": structured.get("clarification") or "這個回答看起來文不對題，可以再具體說明一下嗎？",
-            "method_run": method_run_to_dict(run),
-            "ideas": None,
-        }
-
-    current_step.user_answer = payload.answer
-    current_step.agent_output_json = structured
+        current_step.user_answer = payload.answer
+        current_step.agent_output_json = structured
+    else:
+        # Timer ran out with nothing typed — skip straight to the next step
+        # instead of running (and likely failing) the relevance check on
+        # an answer that doesn't exist.
+        current_step.user_answer = None
+        current_step.agent_output_json = None
 
     next_index = run.current_step_index + 1
     if next_index < len(agent.steps):

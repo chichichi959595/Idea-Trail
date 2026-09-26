@@ -40,7 +40,6 @@ export function NewSessionForm({ onSubmit, submitting, error }: Props) {
   const [constraints, setConstraints] = useState('')
   const [hasClearProblem, setHasClearProblem] = useState<string>('unknown')
   const [hasExistingProduct, setHasExistingProduct] = useState<string>('unknown')
-  const [isTechDriven, setIsTechDriven] = useState<string>('unknown')
 
   const toBool = (v: string) => (v === 'unknown' ? null : v === 'yes')
   const toggle = (list: string[], setList: (v: string[]) => void, opt: string) =>
@@ -59,7 +58,6 @@ export function NewSessionForm({ onSubmit, submitting, error }: Props) {
           constraints_text: constraints || null,
           has_clear_problem: toBool(hasClearProblem),
           has_existing_product: toBool(hasExistingProduct),
-          is_tech_driven: toBool(isTechDriven),
         })
       }}
     >
@@ -132,7 +130,6 @@ export function NewSessionForm({ onSubmit, submitting, error }: Props) {
           value={hasExistingProduct}
           onChange={setHasExistingProduct}
         />
-        <TriChoice label="技術導向但還不確定應用場景？" value={isTechDriven} onChange={setIsTechDriven} />
       </div>
 
       {error && (
@@ -143,40 +140,64 @@ export function NewSessionForm({ onSubmit, submitting, error }: Props) {
 
       <div className="mt-8 flex flex-wrap items-center gap-4">
         <Button type="submit" disabled={submitting} className="w-full sm:w-auto">
-          {submitting ? '建立中…' : '建立工作台並取得方法推薦'}
+          {submitting ? '建立中…' : '建立工作台'}
         </Button>
-        {submitting && <ThinkingIndicator label="AI 正在分析並準備方法推薦…" />}
+        {submitting && <ThinkingIndicator label="建立工作台中…" />}
       </div>
     </FormPanel>
   )
+}
+
+interface FollowUp {
+  label: string
+  placeholder: string
+  value: string
+  onChange: (v: string) => void
 }
 
 function TriChoice({
   label,
   value,
   onChange,
+  followUp,
 }: {
   label: string
   value: string
   onChange: (v: string) => void
+  followUp?: FollowUp
 }) {
   return (
-    <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-      <Meta className="text-foreground">{label}</Meta>
-      <div className="flex gap-0">
-        {(['yes', 'no', 'unknown'] as const).map((opt, i) => (
-          <button
-            type="button"
-            key={opt}
-            onClick={() => onChange(opt)}
-            className={`min-h-11 border-2 border-foreground px-4 text-xs font-bold uppercase tracking-widest transition-colors duration-150 ${
-              i > 0 ? '-ml-0.5' : ''
-            } ${value === opt ? 'bg-accent border-accent text-background' : 'bg-background text-foreground hover:bg-muted'}`}
-          >
-            {opt === 'yes' ? '是' : opt === 'no' ? '否' : '不確定'}
-          </button>
-        ))}
+    <div className="flex flex-col gap-3">
+      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+        <Meta className="text-foreground">{label}</Meta>
+        <div className="flex gap-0">
+          {(['yes', 'no', 'unknown'] as const).map((opt, i) => (
+            <button
+              type="button"
+              key={opt}
+              onClick={() => onChange(opt)}
+              className={`min-h-11 border-2 border-foreground px-4 text-xs font-bold uppercase tracking-widest transition-colors duration-150 ${
+                i > 0 ? '-ml-0.5' : ''
+              } ${value === opt ? 'bg-accent border-accent text-background' : 'bg-background text-foreground hover:bg-muted'}`}
+            >
+              {opt === 'yes' ? '是' : opt === 'no' ? '否' : '不確定'}
+            </button>
+          ))}
+        </div>
       </div>
+
+      {followUp && value === 'yes' && (
+        <div className="border-l-2 border-accent pl-4">
+          <Field label={followUp.label}>
+            <textarea
+              className={`${textareaClass} min-h-16 resize-y`}
+              placeholder={followUp.placeholder}
+              value={followUp.value}
+              onChange={(e) => followUp.onChange(e.target.value)}
+            />
+          </Field>
+        </div>
+      )}
     </div>
   )
 }

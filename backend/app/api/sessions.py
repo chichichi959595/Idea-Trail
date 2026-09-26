@@ -40,31 +40,35 @@ async def recommend_methods(session_id: int, provider: str = "claude", db: DbSes
         raise HTTPException(404, "session not found")
 
     try:
-        methods, rationale_by_method, result = await method_selector.recommend(session, provider)
+        rec_result = await method_selector.recommend(session, provider)
     except ProviderError as exc:
         raise HTTPException(502, str(exc)) from exc
 
     db.query(MethodRecommendation).filter(MethodRecommendation.session_id == session_id).delete()
     records = []
-    for rank, method in enumerate(methods, start=1):
+    for rank, method in enumerate(rec_result.methods, start=1):
         rec = MethodRecommendation(
             session_id=session_id,
             method=method,
             rank=rank,
-            rationale=rationale_by_method.get(method, ""),
+            rationale=rec_result.rationale_by_method.get(method, ""),
         )
         db.add(rec)
         records.append(rec)
 
     log_llm_call(
         db,
-        result,
-        system_prompt=method_selector.RATIONALE_SYSTEM_PROMPT,
-        user_prompt="(method selector rationale call)",
+        rec_result.result,
+        system_prompt=method_selector.SELECTOR_SYSTEM_PROMPT,
+        user_prompt=rec_result.user_prompt,
         session_id=session_id,
     )
     db.commit()
-    return [recommendation_to_dict(r) for r in records]
+    return {
+        "recommendations": [recommendation_to_dict(r) for r in records],
+        "rule_ranking": rec_result.rule_ranking,
+        "adjustment_note": rec_result.adjustment_note,
+    }
 
 
 @router.get("/{session_id}/ideas")

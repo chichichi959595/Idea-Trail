@@ -1,4 +1,4 @@
-import type { AnswerStepResponse, Idea, MethodRecommendation, MethodRun, ProvidersHealth, Session } from './types'
+import type { AnswerStepResponse, Idea, MethodRecommendationResult, MethodRun, ProvidersHealth, Session } from './types'
 
 const BASE_URL = 'http://127.0.0.1:8000'
 
@@ -23,7 +23,7 @@ export const api = {
   getSession: (id: number) => request<Session>(`/sessions/${id}`),
 
   recommendMethods: (sessionId: number, provider = 'claude') =>
-    request<MethodRecommendation[]>(
+    request<MethodRecommendationResult>(
       `/sessions/${sessionId}/method-recommendation?provider=${provider}`,
       { method: 'POST' },
     ),
@@ -36,10 +36,10 @@ export const api = {
 
   getMethodRun: (runId: number) => request<MethodRun>(`/method-runs/${runId}`),
 
-  answerStep: (runId: number, stepIndex: number, answer: string) =>
+  answerStep: (runId: number, stepIndex: number, answer: string, force = false) =>
     request<AnswerStepResponse>(`/method-runs/${runId}/answer`, {
       method: 'POST',
-      body: JSON.stringify({ step_index: stepIndex, answer }),
+      body: JSON.stringify({ step_index: stepIndex, answer, force }),
     }),
 
   listIdeas: (sessionId: number) => request<Idea[]>(`/sessions/${sessionId}/ideas`),
