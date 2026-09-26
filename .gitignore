@@ -4,8 +4,12 @@ __pycache__/
 .venv/
 *.egg-info/
 
-# Database
+# Database (including hand-made backups like workbench.sqlite3.bak-20260926-202031,
+# which hold every prompt and response ever logged to llm_calls)
 *.sqlite3
+*.sqlite3-*
+*.sqlite3.*
+*.db
 
 # Node / frontend
 node_modules/
