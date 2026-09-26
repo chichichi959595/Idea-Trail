@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { METHOD_LABELS, type MethodRun, type MethodStep } from '../types'
+import { METHOD_LABELS, METHOD_TUTORIALS, type MethodRun, type MethodStep } from '../types'
 import { Body, Button, Headline, Meta, Panel, SectionLabel, Support, Tag, textareaClass, ThinkingIndicator } from './ui'
 
 interface Props {
@@ -14,13 +14,36 @@ interface Props {
 export function FrameworkRunView({ run, onAnswer, submitting, error, feedback, onGoToIdeas }: Props) {
   const pastSteps = run.steps.filter((s) => s.user_answer !== null)
   const currentStep = run.steps.find((s) => s.step_index === run.current_step_index)
+  const tutorial = METHOD_TUTORIALS[run.method_name]
 
   return (
     <Panel className="mt-8">
       <SectionLabel number="03">Ideation</SectionLabel>
-      <div className="mb-8 flex flex-wrap items-center gap-3">
-        <Headline>{METHOD_LABELS[run.method_name] ?? run.method_name} 發想中</Headline>
-        <Tag>{run.provider}</Tag>
+      <div className="mb-8">
+        <div className="flex flex-wrap items-center gap-3">
+          <Headline>{METHOD_LABELS[run.method_name] ?? run.method_name} 發想中</Headline>
+          <Tag>{run.provider}</Tag>
+        </div>
+        {tutorial && (
+          <details className="mt-3">
+            <summary className="inline-flex cursor-pointer items-center gap-1.5 text-xs font-bold uppercase tracking-widest text-foreground/50 hover:text-foreground/80">
+              <span
+                aria-hidden
+                className="border-foreground/50 flex h-4 w-4 items-center justify-center rounded-full border text-[10px] leading-none"
+              >
+                ?
+              </span>
+              這個方法是什麼？怎麼玩？
+            </summary>
+            <div className="border-foreground/20 mt-3 border-l-2 pl-4">
+              <Support className="text-foreground/80">{tutorial.intro}</Support>
+              <Support className="mt-2 text-foreground/70">
+                <span className="text-foreground font-bold">怎麼玩：</span>
+                {tutorial.howTo}
+              </Support>
+            </div>
+          </details>
+        )}
       </div>
 
       {pastSteps.length > 0 && (

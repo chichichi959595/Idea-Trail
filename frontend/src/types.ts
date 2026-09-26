@@ -93,6 +93,59 @@ export const METHOD_DESCRIPTIONS: Record<string, string> = {
   crazy_8s: '限時、限量、不准評論自己，快速衝出一堆點子，越後面擠出來的往往越有突破性。',
 }
 
+export interface MethodTutorial {
+  /** What the method is and why it works — the underlying idea. */
+  intro: string
+  /** How to actually play it within this flow, in plain terms. */
+  howTo: string
+}
+
+/** Fuller "what is this / how do I play it" copy — shown on demand during
+ * a run, next to the method name, so people don't need to already know
+ * the technique before they can use it well. */
+export const METHOD_TUTORIALS: Record<string, MethodTutorial> = {
+  pain_point: {
+    intro: '從真實觀察到的困擾出發，而不是憑空想題目：核心假設是「先有痛點、才有解法」。',
+    howTo: '依序回答最近卡在什麼事、誰會遇到、現在怎麼解決、為什麼不好、多常發生、解決後的價值。回答越具體，AI 抽出的想法片段就越準。',
+  },
+  scamper: {
+    intro: '針對一個現有的產品、服務或流程，用七個固定角度逐一逼問「還能怎麼改」，是最經典的產品改造發想法。',
+    howTo: '先講清楚要套用的對象是什麼，接著依序回答替代、結合、調整、修改、其他用途、消除、反轉七個角度，每個角度舉一個具體例子就好，不用每個都很厲害。',
+  },
+  reverse_thinking: {
+    intro: '源自「最糟點子法」：與其直接想好點子，不如先故意想最爛的點子，因為爛點子往往能暴露出真正重要的限制條件，再把它們調轉回來。',
+    howTo: '先講情境，接著刻意想幾個爛到不行的點子，說出它們爛在哪裡，最後挑一個最有趣的爛點子，把它修正成一個說得通的方向。',
+  },
+  user_journey: {
+    intro: '把使用情境攤開成一段完整的旅程，從旅程裡最痛的那個瞬間找切入點，而不是憑空想功能。',
+    howTo: '依序描述主角是誰、他為什麼開始這趟旅程、大致經歷哪些步驟、哪個階段最卡，最後指出如果只能改一個瞬間會是哪裡。',
+  },
+  analogy: {
+    intro: '太陽底下沒有新鮮事：先描述你的問題結構，再去別的領域（甚至大自然）找已經解決類似結構問題的做法，把邏輯借過來套用。',
+    howTo: '描述你的問題，想一個結構類似但完全不同領域的例子，說明那個領域怎麼解決，最後把那套邏輯套回你的題目。',
+  },
+  capability_mapping: {
+    intro: '從你們已經會的技術出發往回推可以解決什麼問題，適合技術導向但還沒有明確題目的團隊；但要小心不要變成「為技術找題目」。',
+    howTo: '先列出拿手或想練的技術，講出它的獨特優勢，想像誰的問題剛好需要這個技術，最後拿掉技術濾鏡，誠實檢查這個問題本身重不重要。',
+  },
+  how_might_we: {
+    intro: '把一個模糊的困擾改寫成一句「How might we...?（我們可以怎麼做，讓...？）」，是設計思考裡最常見的重新框定問題手法，能把抱怨轉成可以發想的問句。',
+    howTo: '先講原始觀察到的問題，把它改寫成一句 HMW 問句，針對這句話盡量列出解法，最後挑一個自己最想深入的。',
+  },
+  mashup: {
+    intro: '準備三種不同性質的清單——對象/場景、痛點/需求、技術/媒介——分開發散、再隨機強迫組合，逼出原本不會想到的交集。',
+    howTo: '分別各自列出 3 個對象、3 個痛點、3 個技術（先不用互相對應），最後從三份清單裡各挑一個硬湊在一起，看看會變成什麼。',
+  },
+  random_input: {
+    intro: '抽一個跟主題完全無關的隨機詞彙，強迫自己把它跟主題湊在一起，用不合理的連結逼出跳脫慣性的點子，適合已經有大方向、只是想不出新意的情況。',
+    howTo: '先講你們的主題方向，接著系統會給一個隨機詞彙，想辦法硬把它跟主題湊在一起想出一個點子，重複兩次後，挑一個比較有潛力的延伸。',
+  },
+  crazy_8s: {
+    intro: '極短時間內逼自己生出大量點子，規則是不准評論、不准刪除、先求數量——前幾個通常是老掉牙的常識，但越後面擠出來的往往越有突破性。',
+    howTo: '先講主題，接著分三輪快速寫下點子（3 個、3 個、2 個），每一輪都刻意換一個角度切入，不要回頭修改或刪除前面寫的。',
+  },
+}
+
 export const IMPLEMENTED_METHODS = new Set([
   'scamper',
   'pain_point',
