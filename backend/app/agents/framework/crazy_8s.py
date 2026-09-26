@@ -15,10 +15,22 @@ _SOLUTION_PROMPTS = [
 class Crazy8sAgent(FrameworkAgent):
     method_name = "crazy_8s"
     method_label = "Crazy 8s"
+    description = (
+        "針對一個具體問題，每 30 秒衝一個解法，8 個解法不准評論自己，越後面擠出來的往往越有突破性。"
+    )
+    tutorial_intro = (
+        "針對「同一個」具體問題，逼自己在極短時間內想出 8 個不同的解法，規則是不准評論、不准刪除、先求數量——前幾個通常是老掉牙的常識，但越後面擠出來的往往越有突破性。"
+    )
+    tutorial_how_to = (
+        "先講清楚要解決的具體問題，接著每一步都有 30 秒的限時，針對同一個問題寫下一個新解法（不是點子，是解法），共 8 步，不要回頭修改或刪除前面寫的。"
+    )
     steps = [
         StepSpec(
             "problem",
             "你們想解決的具體問題或挑戰是什麼？盡量講清楚（例如「學生常常忘記繳交作業」），這一步不用想解法，只要把問題講清楚就好。",
         ),
-        *[StepSpec(f"solution_{i + 1}", prompt) for i, prompt in enumerate(_SOLUTION_PROMPTS)],
+        *[
+            StepSpec(f"solution_{i + 1}", prompt, timer_seconds=30)
+            for i, prompt in enumerate(_SOLUTION_PROMPTS)
+        ],
     ]

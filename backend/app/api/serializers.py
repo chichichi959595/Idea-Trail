@@ -34,6 +34,7 @@ def step_to_dict(s: MethodStep) -> dict:
         "step_index": s.step_index,
         "step_name": s.step_name,
         "question_shown": s.question_shown,
+        "timer_seconds": s.timer_seconds,
         "user_answer": s.user_answer,
         "agent_output": s.agent_output_json,
         "created_at": s.created_at.isoformat(),

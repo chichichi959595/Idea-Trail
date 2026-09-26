@@ -9,3 +9,14 @@ dependencies = [
     "sqlalchemy>=2.0",
     "uvicorn[standard]>=0.32",
 ]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    # TestClient transport — dev only, never imported at runtime.
+    # httpx2, not httpx: starlette deprecated the latter for TestClient.
+    "httpx2",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

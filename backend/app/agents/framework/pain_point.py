@@ -4,6 +4,15 @@ from .base import FrameworkAgent, StepSpec
 class PainPointAgent(FrameworkAgent):
     method_name = "pain_point"
     method_label = "痛點導向"
+    description = (
+        "從最近讓你們覺得麻煩的事情出發，逐步問出誰遇到、多常發生、現在怎麼解決，收斂成具體題目。"
+    )
+    tutorial_intro = (
+        "從真實觀察到的困擾出發，而不是憑空想題目：核心假設是「先有痛點、才有解法」。"
+    )
+    tutorial_how_to = (
+        "依序回答最近卡在什麼事、誰會遇到、現在怎麼解決、為什麼不好、多常發生、解決後的價值。回答越具體，AI 抽出的想法片段就越準。"
+    )
     steps = [
         StepSpec(
             "trigger",

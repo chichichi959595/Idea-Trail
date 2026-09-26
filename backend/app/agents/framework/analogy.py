@@ -4,6 +4,15 @@ from .base import FrameworkAgent, StepSpec
 class AnalogyAgent(FrameworkAgent):
     method_name = "analogy"
     method_label = "類比法"
+    description = (
+        "借用其他領域已經解決類似問題的做法，類比套用到你們的情境。"
+    )
+    tutorial_intro = (
+        "太陽底下沒有新鮮事：先描述你們的問題結構，再去別的領域（甚至大自然）找已經解決類似結構問題的做法，把邏輯借過來套用。"
+    )
+    tutorial_how_to = (
+        "描述你們的問題，想一個結構類似但完全不同領域的例子，說明那個領域怎麼解決，最後把那套邏輯套回你們的題目。"
+    )
     steps = [
         StepSpec(
             "problem",

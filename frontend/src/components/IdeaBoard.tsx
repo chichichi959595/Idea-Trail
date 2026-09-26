@@ -1,4 +1,5 @@
-import { METHOD_LABELS, type Idea } from '../types'
+import { useMethodCatalog } from '../useMethodCatalog'
+import type { Idea } from '../types'
 import { Body, Button, Headline, Meta, Panel, SectionLabel, Subhead, Tag, ThinkingIndicator } from './ui'
 
 interface Props {
@@ -22,6 +23,8 @@ export function IdeaBoard({
   onBackToMethods,
   error,
 }: Props) {
+  const { shortLabelOf } = useMethodCatalog()
+
   return (
     <Panel className="mt-8">
       <SectionLabel number="04">Ideas</SectionLabel>
@@ -36,26 +39,14 @@ export function IdeaBoard({
         {ideas.map((idea) => {
           const selected = selectedIds.includes(idea.id)
           return (
-            <div
+            <article
               key={idea.id}
-              role="button"
-              tabIndex={0}
-              onClick={() => onOpenDetail(idea)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter' || e.key === ' ') {
-                  e.preventDefault()
-                  onOpenDetail(idea)
-                }
-              }}
-              className={`flex cursor-pointer flex-col gap-3 border-2 p-5 text-left transition-all duration-150 ease-out hover:-translate-y-0.5 ${
+              className={`flex flex-col gap-3 border-2 p-5 transition-all duration-150 ease-out focus-within:border-accent hover:-translate-y-0.5 ${
                 selected ? 'border-accent' : 'border-foreground hover:border-accent'
               }`}
             >
               <div className="flex items-center justify-between">
-                <label
-                  className="flex cursor-pointer items-center gap-2"
-                  onClick={(e) => e.stopPropagation()}
-                >
+                <label className="flex cursor-pointer items-center gap-2">
                   <input
                     type="checkbox"
                     checked={selected}
@@ -66,12 +57,21 @@ export function IdeaBoard({
                   <Meta>選取</Meta>
                 </label>
                 <Tag active={idea.is_synthesized}>
-                  {idea.is_synthesized ? '整合' : (METHOD_LABELS[idea.source_method ?? ''] ?? idea.source_method)}
+                  {idea.is_synthesized ? '整合' : shortLabelOf(idea.source_method)}
                 </Tag>
               </div>
-              <Subhead>{idea.title}</Subhead>
+              {/* The title is the control that opens the detail view. A real
+                  button keeps the checkbox from being nested inside another
+                  interactive element, which no screen reader handles well. */}
+              <button
+                type="button"
+                onClick={() => onOpenDetail(idea)}
+                className="cursor-pointer text-left focus-visible:outline-none"
+              >
+                <Subhead className="underline-offset-4 hover:underline">{idea.title}</Subhead>
+              </button>
               <Body className="text-foreground/75 line-clamp-5">{idea.description}</Body>
-            </div>
+            </article>
           )
         })}
       </div>

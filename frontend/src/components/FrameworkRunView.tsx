@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
-import { getStepTimerSeconds, METHOD_LABELS, METHOD_TUTORIALS, type MethodRun, type MethodStep } from '../types'
+import { useMethodCatalog } from '../useMethodCatalog'
+import type { MethodRun, MethodStep } from '../types'
 import { Body, Button, Headline, Meta, Panel, SectionLabel, Support, Tag, textareaClass, ThinkingIndicator } from './ui'
 
 interface Props {
@@ -8,20 +9,33 @@ interface Props {
   submitting: boolean
   error: string | null
   feedback: string | null
+  onRetryFinalize: () => void
   onGoToIdeas: () => void
 }
 
-export function FrameworkRunView({ run, onAnswer, submitting, error, feedback, onGoToIdeas }: Props) {
-  const pastSteps = run.steps.filter((s) => s.user_answer !== null)
+export function FrameworkRunView({
+  run,
+  onAnswer,
+  submitting,
+  error,
+  feedback,
+  onRetryFinalize,
+  onGoToIdeas,
+}: Props) {
+  const { get, labelOf } = useMethodCatalog()
+  // Every step already answered *or* deliberately skipped. Filtering on
+  // `user_answer !== null` used to silently drop timed-out steps from the
+  // history, so a Crazy 8s run could show fewer rounds than it actually ran.
+  const pastSteps = run.steps.filter((s) => s.step_index < run.current_step_index)
   const currentStep = run.steps.find((s) => s.step_index === run.current_step_index)
-  const tutorial = METHOD_TUTORIALS[run.method_name]
+  const tutorial = get(run.method_name)?.tutorial
 
   return (
     <Panel className="mt-8">
       <SectionLabel number="03">Ideation</SectionLabel>
       <div className="mb-8">
         <div className="flex flex-wrap items-center gap-3">
-          <Headline>{METHOD_LABELS[run.method_name] ?? run.method_name} 發想中</Headline>
+          <Headline>{labelOf(run.method_name)} 發想中</Headline>
           <Tag>{run.model ? `${run.provider} / ${run.model}` : run.provider}</Tag>
         </div>
         {tutorial && (
@@ -39,7 +53,7 @@ export function FrameworkRunView({ run, onAnswer, submitting, error, feedback, o
               <Support className="text-foreground/80">{tutorial.intro}</Support>
               <Support className="mt-2 text-foreground/70">
                 <span className="text-foreground font-bold">怎麼玩：</span>
-                {tutorial.howTo}
+                {tutorial.how_to}
               </Support>
             </div>
           </details>
@@ -52,7 +66,11 @@ export function FrameworkRunView({ run, onAnswer, submitting, error, feedback, o
             <li key={s.id} className="border-foreground/20 border-l-2 pl-5">
               <Meta className="mb-1 block">{s.step_name}</Meta>
               <Support className="mb-2 text-foreground/70">{s.question_shown}</Support>
-              <Body className="mb-3">你：{s.user_answer}</Body>
+              {s.user_answer ? (
+                <Body className="mb-3">你：{s.user_answer}</Body>
+              ) : (
+                <Body className="text-foreground/40 mb-3 italic">（時間到，這題沒有作答）</Body>
+              )}
               {s.agent_output && (
                 <div className="swiss-dots bg-muted border-foreground/10 border-l-2 p-4">
                   {s.agent_output.analysis && (
@@ -86,7 +104,7 @@ export function FrameworkRunView({ run, onAnswer, submitting, error, feedback, o
           submitting={submitting}
           error={error}
           feedback={feedback}
-          timerSeconds={getStepTimerSeconds(run.method_name, currentStep.step_name)}
+          timerSeconds={currentStep.timer_seconds}
         />
       )}
 
@@ -94,6 +112,31 @@ export function FrameworkRunView({ run, onAnswer, submitting, error, feedback, o
         <div className="border-foreground border-t-4 pt-8">
           <Body className="mb-5">這個方法已經跑完了，收斂出的候選想法已經加進想法牆。</Body>
           <Button onClick={onGoToIdeas}>前往想法牆</Button>
+        </div>
+      )}
+
+      {/* All the answers survived — only the final convergence call came back
+          empty, so this replays just that one call. */}
+      {run.status === 'failed' && (
+        <div className="border-accent border-t-4 pt-8">
+          <Body className="mb-2 font-bold">收斂失敗：AI 這次沒有產出任何候選想法。</Body>
+          <Support className="text-foreground/70 mb-5">
+            你上面的回答都還在，重新收斂只會再跑一次最後那一步，不用重新回答一遍。
+          </Support>
+          {error && (
+            <p className="border-accent bg-accent/5 text-accent mb-5 border-2 px-4 py-3 text-sm font-bold">
+              {error}
+            </p>
+          )}
+          <div className="flex flex-wrap items-center gap-4">
+            <Button onClick={onRetryFinalize} disabled={submitting}>
+              重新收斂
+            </Button>
+            <Button variant="secondary" onClick={onGoToIdeas} disabled={submitting}>
+              先去想法牆
+            </Button>
+            {submitting && <ThinkingIndicator label="AI 正在重新收斂…" />}
+          </div>
         </div>
       )}
     </Panel>
@@ -245,7 +288,12 @@ function useCountdown(seconds: number | null): number {
     if (seconds === null) return
     setRemaining(seconds)
     const id = setInterval(() => {
-      setRemaining((r) => (r > 0 ? r - 1 : 0))
+      setRemaining((r) => {
+        // Stop the timer at 0 instead of letting it tick forever against a
+        // value React would just bail out of re-rendering anyway.
+        if (r <= 1) clearInterval(id)
+        return r > 0 ? r - 1 : 0
+      })
     }, 1000)
     return () => clearInterval(id)
   }, [seconds])

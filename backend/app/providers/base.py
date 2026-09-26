@@ -20,9 +20,15 @@ class LLMResult:
     structured: Optional[dict]
     provider: str
     model: Optional[str]
+    """The model as *requested* — the same alias stored on MethodRun.model, so
+    a run and its logged calls can always be matched up."""
     cost_usd: Optional[float]
     duration_ms: Optional[int]
     raw: str
+    resolved_model: Optional[str] = None
+    """The concrete model the CLI reports having actually run (e.g.
+    "claude-sonnet-5" behind the "sonnet" alias). Recorded separately because
+    an alias points at a different model over time."""
 
 
 class ProviderError(RuntimeError):

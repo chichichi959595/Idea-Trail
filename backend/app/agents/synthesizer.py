@@ -18,6 +18,10 @@ SYNTH_OUTPUT_SCHEMA = {
     "properties": {
         "ideas": {
             "type": "array",
+            # Without a floor, `{"ideas": []}` satisfies the schema — the model
+            # can return nothing at all and still look like a successful call.
+            "minItems": 1,
+            "maxItems": 3,
             "items": {
                 "type": "object",
                 "properties": {

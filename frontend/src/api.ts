@@ -1,4 +1,12 @@
-import type { AnswerStepResponse, Idea, MethodRecommendationResult, MethodRun, ProvidersHealth, Session } from './types'
+import type {
+  AnswerStepResponse,
+  Idea,
+  MethodCatalogEntry,
+  MethodRecommendationResult,
+  MethodRun,
+  ProvidersHealth,
+  Session,
+} from './types'
 
 const BASE_URL = 'http://127.0.0.1:8000'
 
@@ -16,6 +24,8 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 
 export const api = {
   providersHealth: () => request<ProvidersHealth>('/providers/health'),
+
+  listMethods: () => request<MethodCatalogEntry[]>('/methods'),
 
   createSession: (payload: Partial<Session>) =>
     request<Session>('/sessions', { method: 'POST', body: JSON.stringify(payload) }),
@@ -44,6 +54,9 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ step_index: stepIndex, answer, force }),
     }),
+
+  retryFinalize: (runId: number) =>
+    request<AnswerStepResponse>(`/method-runs/${runId}/finalize`, { method: 'POST' }),
 
   listIdeas: (sessionId: number) => request<Idea[]>(`/sessions/${sessionId}/ideas`),
 

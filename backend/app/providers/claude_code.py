@@ -125,13 +125,12 @@ class ClaudeCodeProvider:
         text = payload.get("result", "")
         duration_ms = payload.get("duration_ms") or int((time.monotonic() - started) * 1000)
 
-        used = _model_actually_used(payload.get("modelUsage"), model)
-
         return LLMResult(
             text=text,
             structured=structured,
             provider=self.name,
-            model=used,
+            model=model,
+            resolved_model=_model_actually_used(payload.get("modelUsage"), model),
             cost_usd=payload.get("total_cost_usd"),
             duration_ms=duration_ms,
             raw=raw,

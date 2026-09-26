@@ -4,6 +4,16 @@ from .base import FrameworkAgent, StepSpec
 class HowMightWeAgent(FrameworkAgent):
     method_name = "how_might_we"
     method_label = "HMW（How Might We）"
+    short_label = "HMW"
+    description = (
+        "把觀察到的問題改寫成一句「How might we...?」，再針對這句話大量發想解法。"
+    )
+    tutorial_intro = (
+        "把一個模糊的困擾改寫成一句「How might we...?（我們可以怎麼做，讓...？）」，是設計思考裡最常見的重新框定問題手法，能把抱怨轉成可以發想的問句。"
+    )
+    tutorial_how_to = (
+        "先講原始觀察到的問題，把它改寫成一句 HMW 問句，針對這句話盡量列出解法，最後挑一個自己最想深入的。"
+    )
     steps = [
         StepSpec(
             "raw_problem",

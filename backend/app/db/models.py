@@ -83,6 +83,9 @@ class MethodStep(Base):
     step_index: Mapped[int] = mapped_column()
     step_name: Mapped[str] = mapped_column(String(100))
     question_shown: Mapped[str] = mapped_column(Text)
+    timer_seconds: Mapped[Optional[int]] = mapped_column(default=None)
+    """Snapshotted from the StepSpec, like question_shown — so an in-flight run
+    keeps the pacing it started with even if the method is later retuned."""
     user_answer: Mapped[Optional[str]] = mapped_column(Text, default=None)
     agent_output_json: Mapped[Optional[dict]] = mapped_column(JSON, default=None)
     created_at: Mapped[dt.datetime] = mapped_column(default=_now)
@@ -116,6 +119,9 @@ class LLMCall(Base):
     session_id: Mapped[Optional[int]] = mapped_column(ForeignKey("sessions.id"), default=None)
     provider: Mapped[str] = mapped_column(String(20))
     model: Mapped[Optional[str]] = mapped_column(String(100), default=None)
+    """The alias that was requested — matches MethodRun.model."""
+    resolved_model: Mapped[Optional[str]] = mapped_column(String(100), default=None)
+    """The concrete model the CLI says it ran, when it tells us."""
     system_prompt: Mapped[str] = mapped_column(Text)
     user_prompt: Mapped[str] = mapped_column(Text)
     response_text: Mapped[str] = mapped_column(Text)

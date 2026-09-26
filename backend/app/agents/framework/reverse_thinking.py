@@ -4,6 +4,15 @@ from .base import FrameworkAgent, StepSpec
 class ReverseThinkingAgent(FrameworkAgent):
     method_name = "reverse_thinking"
     method_label = "逆向思考"
+    description = (
+        "故意想一堆最爛、最沒用的點子，挖出爛在哪裡，再把最有趣的一個調轉成有商機的方向。"
+    )
+    tutorial_intro = (
+        "源自「最糟點子法」：與其直接想好點子，不如先故意想最爛的點子，因為爛點子往往能暴露出真正重要的限制條件，再把它們調轉回來。"
+    )
+    tutorial_how_to = (
+        "先講情境，接著刻意想幾個爛到不行的點子，說出它們爛在哪裡，最後挑一個最有趣的爛點子，把它修正成一個說得通的方向。"
+    )
     steps = [
         StepSpec(
             "subject",

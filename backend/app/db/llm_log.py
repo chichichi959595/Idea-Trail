@@ -22,6 +22,7 @@ def log_llm_call(
         session_id=session_id,
         provider=result.provider,
         model=result.model,
+        resolved_model=result.resolved_model,
         system_prompt=system_prompt,
         user_prompt=user_prompt,
         response_text=result.text,

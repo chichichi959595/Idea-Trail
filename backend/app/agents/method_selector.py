@@ -2,75 +2,50 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from app.agents.framework import (
+    METHOD_ORDER,
+    method_descriptions,
+    method_labels,
+)
 from app.db.models import IdeationSession
 from app.providers.base import LLMResult
 from app.providers.quality import complete_with_quality_guard
 from app.providers.registry import get_provider
 
-METHOD_LABELS = {
-    "pain_point": "痛點導向",
-    "user_journey": "使用者旅程",
-    "scamper": "SCAMPER",
-    "reverse_thinking": "逆向思考",
-    "analogy": "類比法",
-    "capability_mapping": "能力對應問題",
-    "how_might_we": "HMW（How Might We）",
-    "mashup": "混搭法（Mash-up）",
-    "random_input": "隨機刺激（Random Input）",
-    "crazy_8s": "Crazy 8s",
-}
+RECOMMENDATION_COUNT = 3
+"""How many methods the team is always shown.
 
-IMPLEMENTED_METHODS = {
-    "scamper",
-    "pain_point",
-    "reverse_thinking",
-    "user_journey",
-    "analogy",
-    "capability_mapping",
-    "how_might_we",
-    "mashup",
-    "random_input",
-    "crazy_8s",
-}
+Fixed on purpose. This used to be `len(baseline)`, i.e. however many methods
+the rules happened to score above zero — which silently collapsed to a single
+recommendation for teams that answered "有明確問題 + 沒有既有產品".
+"""
 
-METHOD_DESCRIPTIONS = {
-    "pain_point": "從最近讓人覺得麻煩的事情出發，逐步問出誰遇到、多常發生、現在怎麼解決，收斂成具體題目。",
-    "user_journey": "把使用情境攤開成完整旅程，找出體驗最差、最值得切入的環節。",
-    "scamper": "針對一個現有對象，用七個角度（替代／結合／調整／修改／其他用途／消除／反轉）逐一發想改造方式。",
-    "reverse_thinking": "故意想一堆最爛、最沒用的點子，挖出爛在哪裡，再把最有趣的一個調轉成有商機的方向。",
-    "analogy": "借用其他領域已經解決類似問題的做法，類比套用到團隊的情境。",
-    "capability_mapping": "從團隊已經會的技術出發，反推可以解決哪些問題，並檢查問題本身是否值得做。",
-    "how_might_we": "把觀察到的問題改寫成一句「How might we...?」，再針對這句話大量發想解法。",
-    "mashup": "分別列出對象、痛點、技術三份清單，再隨機強迫組合出新方向。",
-    "random_input": "抽一個完全無關的隨機詞彙，強迫把它跟主題湊在一起，逼出意外的連結。",
-    "crazy_8s": "針對一個具體問題，限時衝出 8 個不同解法，先求數量、不准自我審查。",
-}
+SELECTOR_SYSTEM_PROMPT = """你是 Method Selector Agent，負責從完整的方法目錄裡，
+為這個團隊挑出最適合的 {count} 個發想方法並排出順序。
 
-_METHOD_ORDER = list(METHOD_LABELS)
-
-SELECTOR_SYSTEM_PROMPT = """你是 Method Selector Agent。系統已經用規則式邏輯，依團隊填的是非題
-（是否已有明確問題、是否有既有產品想改造）排出了一份基準推薦清單。
-但規則只看得懂那兩個是非題，看不懂團隊自己寫的文字
+系統另外附了一份規則式的「參考排序」。那份排序只看得懂兩個是非題
+（是否已有明確問題、是否有既有產品想改造），看不懂團隊自己寫的文字
 （技術背景、領域偏好、限制條件、可用時間，以及他們描述的問題或想改造的對象）。
+**它只是參考，不是限制**——你可以完全照用、可以調順序、也可以整份換掉。
+請以團隊實際寫的內容為主要判斷依據。
 
-你的工作是讀完團隊的完整資訊後，判斷這份基準清單合不合理，並做出「有限度的調整」：
-
-1. 你可以調整這幾個方法的**先後順序**。
-2. 如果你認為候選清單裡有某個方法明顯不適合這個團隊，你可以把它**換掉一個**，
-   從下面的完整方法目錄裡挑一個更適合的替補進來。最多只能換一個。
-3. 如果你認為規則排的已經很好，就保持原樣，不要為了改而改。
-
-接著針對最終清單裡的每一個方法，用兩到三句話向這個團隊說明「為什麼這個方法適合他們目前的狀況」，
+接著針對你選的每一個方法，用兩到三句話向這個團隊說明「為什麼這個方法適合他們目前的狀況」，
 理由要扣住他們實際填的內容（例如他們寫的限制條件或技術背景），不要只是複述方法的通用介紹。
 
-最後在 adjustment 欄位用一到兩句話說明你做了什麼調整、為什麼；
-如果你完全沒有調整，就說明你為什麼認為原本的排序已經適合。
+最後在 adjustment 欄位用一到兩句話說明你的選擇跟參考排序差在哪、為什麼；
+如果你完全照用參考排序，就說明你為什麼認為它已經適合。
 
 一律使用繁體中文，只回傳符合 JSON schema 的結構化輸出，不要有多餘文字。"""
 
 
 def score_methods(session: IdeationSession) -> dict[str, int]:
-    scores = {m: 0 for m in METHOD_LABELS}
+    """Rule-of-thumb scores from the two yes/no fields.
+
+    Only ever a hint now — `recommend()` passes the resulting order to the
+    model as a suggestion and lets it decide, and falls back to this order
+    only when the model's answer is unusable.
+    """
+    scores = {m: 0 for m in METHOD_ORDER}
     if session.has_clear_problem is False:
         scores["pain_point"] += 2
         scores["user_journey"] += 2
@@ -92,29 +67,30 @@ def score_methods(session: IdeationSession) -> dict[str, int]:
     return scores
 
 
-def rank_methods(session: IdeationSession, top_n: int = 3) -> list[str]:
+def rank_methods(session: IdeationSession, top_n: int = RECOMMENDATION_COUNT) -> list[str]:
+    """The rules' suggested ordering — always exactly `top_n` methods.
+
+    Methods the rules have no opinion about (score 0) still fill the tail in
+    catalog order, so the caller always has a complete fallback list.
+    """
     scores = score_methods(session)
-    ranked = sorted(scores.items(), key=lambda kv: (-kv[1], _METHOD_ORDER.index(kv[0])))
-    top = [method for method, s in ranked if s > 0][:top_n]
-    if not top:
-        top = ["pain_point", "scamper"]
-    return top
+    ranked = sorted(scores.items(), key=lambda kv: (-kv[1], METHOD_ORDER.index(kv[0])))
+    return [method for method, _ in ranked][:top_n]
 
 
 def _selector_schema() -> dict:
-    # The enum spans every implemented method, not just the rule baseline —
-    # that's what lets the model swap one out for a better fit.
-    choices = [m for m in _METHOD_ORDER if m in IMPLEMENTED_METHODS]
     return {
         "type": "object",
         "properties": {
             "adjustment": {"type": "string"},
             "items": {
                 "type": "array",
+                "minItems": RECOMMENDATION_COUNT,
+                "maxItems": RECOMMENDATION_COUNT,
                 "items": {
                     "type": "object",
                     "properties": {
-                        "method": {"type": "string", "enum": choices},
+                        "method": {"type": "string", "enum": METHOD_ORDER},
                         "rationale": {"type": "string"},
                     },
                     "required": ["method", "rationale"],
@@ -127,36 +103,23 @@ def _selector_schema() -> dict:
     }
 
 
-def apply_adjustment(baseline: list[str], proposed: list[str], max_swaps: int) -> list[str]:
-    """Keep the model's ordering but cap how far it may depart from the rules.
+def finalize_selection(
+    proposed: list[str], fallback: list[str], count: int = RECOMMENDATION_COUNT
+) -> list[str]:
+    """The model's picks, cleaned up and guaranteed to be exactly `count` long.
 
-    Drops unknown/duplicate methods, allows at most `max_swaps` methods the
-    rules didn't pick, and backfills from the baseline if the model returned
-    too few usable entries — so a bad response degrades to the rule ranking
-    instead of producing a broken recommendation list.
+    The model chooses freely — this only drops unknown/duplicate methods and
+    tops the list back up (first from the rules' ordering, then from the rest
+    of the catalog) so a truncated or garbled response still yields a complete
+    recommendation list instead of a short one.
     """
-    target = len(baseline)
-    baseline_set = set(baseline)
     final: list[str] = []
-    swaps = 0
-
-    for method in proposed:
-        if len(final) >= target:
+    for method in (*proposed, *fallback, *METHOD_ORDER):
+        if len(final) >= count:
             break
-        if method in final or method not in IMPLEMENTED_METHODS:
+        if method in final or method not in METHOD_ORDER:
             continue
-        if method not in baseline_set:
-            if swaps >= max_swaps:
-                continue
-            swaps += 1
         final.append(method)
-
-    for method in baseline:
-        if len(final) >= target:
-            break
-        if method not in final:
-            final.append(method)
-
     return final
 
 
@@ -166,19 +129,18 @@ class Recommendation:
     """Final ranking actually shown to the team."""
     rationale_by_method: dict[str, str]
     rule_ranking: list[str]
-    """What the rules alone proposed, before the model adjusted it."""
+    """What the rules alone suggested, before the model decided."""
     adjustment_note: str
+    system_prompt: str
+    """The prompt as actually sent (placeholders filled in), so the audit log
+    records what the model really saw rather than the raw template."""
     user_prompt: str
     result: LLMResult
 
 
-def _render_catalog(exclude: list[str]) -> str:
-    lines = [
-        f"- {m}（{METHOD_LABELS[m]}）：{METHOD_DESCRIPTIONS[m]}"
-        for m in _METHOD_ORDER
-        if m in IMPLEMENTED_METHODS and m not in exclude
-    ]
-    return "\n".join(lines)
+def _render_catalog() -> str:
+    labels, descriptions = method_labels(), method_descriptions()
+    return "\n".join(f"- {m}（{labels[m]}）：{descriptions[m]}" for m in METHOD_ORDER)
 
 
 async def recommend(
@@ -187,21 +149,17 @@ async def recommend(
     model: str | None = None,
 ) -> Recommendation:
     scores = score_methods(session)
-    baseline = rank_methods(session)
-    # With every score at zero the rules have no real opinion (they only read
-    # the yes/no fields), so let the model choose freely instead of anchoring
-    # it to an arbitrary default pair.
-    rules_had_signal = any(v > 0 for v in scores.values())
-    max_swaps = 1 if rules_had_signal else len(baseline)
+    suggestion = rank_methods(session)
+    labels, descriptions = method_labels(), method_descriptions()
 
-    baseline_block = "\n".join(
-        f"{rank}. {m}（{METHOD_LABELS[m]}）— 規則分數 {scores[m]}：{METHOD_DESCRIPTIONS[m]}"
-        for rank, m in enumerate(baseline, start=1)
+    suggestion_block = "\n".join(
+        f"{rank}. {m}（{labels[m]}）— 規則分數 {scores[m]}"
+        for rank, m in enumerate(suggestion, start=1)
     )
-    if not rules_had_signal:
-        baseline_block += (
-            "\n\n（注意：團隊把是非題都留在「不確定」，規則沒有任何依據，"
-            "上面只是預設值。請主要根據團隊自己寫的文字判斷，必要時整份換掉。）"
+    if not any(v > 0 for v in scores.values()):
+        suggestion_block += (
+            "\n\n（注意：團隊把是非題都留在「不確定」，規則完全沒有依據，"
+            "上面只是目錄順序。請純粹根據團隊自己寫的文字判斷。）"
         )
 
     user_prompt = (
@@ -215,37 +173,32 @@ async def recommend(
         f"他們說的問題是: {session.clear_problem_text or '(未填)'}\n"
         f"是否已有既有產品/題目想改造: {session.has_existing_product}\n"
         f"想改造的對象是: {session.existing_product_text or '(未填)'}\n\n"
-        f"# 規則排出的基準清單（共 {len(baseline)} 個）\n{baseline_block}\n\n"
-        f"# 其他可以替補的方法\n{_render_catalog(baseline)}\n\n"
-        f"請輸出最終的 {len(baseline)} 個方法（依推薦順序），"
-        f"每個附上推薦理由，並在 adjustment 說明你做了什麼調整。"
-        f"最多只能替換 {max_swaps} 個方法。"
+        f"# 完整方法目錄（共 {len(METHOD_ORDER)} 個，你可以自由從中挑選）\n{_render_catalog()}\n\n"
+        f"# 規則排出的參考排序（僅供參考，可自由推翻）\n{suggestion_block}\n\n"
+        f"請從上面的目錄挑出最適合的 {RECOMMENDATION_COUNT} 個方法（依推薦順序），"
+        f"每個附上針對這個團隊的推薦理由，並在 adjustment 說明你的選擇與參考排序的差異。"
     )
 
+    system_prompt = SELECTOR_SYSTEM_PROMPT.format(count=RECOMMENDATION_COUNT)
     provider = get_provider(provider_name)
     result = await complete_with_quality_guard(
         provider,
-        system_prompt=SELECTOR_SYSTEM_PROMPT,
+        system_prompt=system_prompt,
         user_prompt=user_prompt,
         json_schema=_selector_schema(),
         model=model,
     )
 
     structured = result.structured or {}
-    items = structured.get("items") or []
-    proposed = [item["method"] for item in items if isinstance(item, dict) and "method" in item]
-    methods = apply_adjustment(baseline, proposed, max_swaps)
-    rationale_by_method = {
-        item["method"]: item.get("rationale", "")
-        for item in items
-        if isinstance(item, dict) and "method" in item
-    }
+    items = [i for i in (structured.get("items") or []) if isinstance(i, dict) and "method" in i]
+    methods = finalize_selection([i["method"] for i in items], suggestion)
 
     return Recommendation(
         methods=methods,
-        rationale_by_method=rationale_by_method,
-        rule_ranking=baseline,
+        rationale_by_method={i["method"]: i.get("rationale", "") for i in items},
+        rule_ranking=suggestion,
         adjustment_note=structured.get("adjustment", ""),
+        system_prompt=system_prompt,
         user_prompt=user_prompt,
         result=result,
     )

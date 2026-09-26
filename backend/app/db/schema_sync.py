@@ -37,15 +37,22 @@ def sync_columns(engine: Engine) -> list[str]:
                     continue
 
                 # SQLite can't add a NOT NULL column to a populated table
-                # without a default — that one genuinely needs a migration.
-                if (
-                    not column.nullable
-                    and column.default is None
-                    and column.server_default is None
-                ):
+                # without a DEFAULT in the DDL — that one genuinely needs a
+                # migration.
+                #
+                # Only server_default counts here. A Python-side `default=` is
+                # applied by SQLAlchemy at insert time and never appears in the
+                # generated DDL, so a column like `status = mapped_column(
+                # String(20), default="running")` compiles to a bare
+                # `status VARCHAR(20) NOT NULL` — which SQLite rejects. Testing
+                # `column.default` too would wave exactly those columns through
+                # and blow up the ALTER below, and since this runs at startup
+                # that takes the whole app down rather than one request.
+                if not column.nullable and column.server_default is None:
                     logger.warning(
-                        "schema_sync: skipping %s.%s — NOT NULL with no default "
-                        "cannot be added to an existing table; migrate it by hand",
+                        "schema_sync: skipping %s.%s — NOT NULL without a "
+                        "server_default cannot be added to an existing table; "
+                        "migrate it by hand",
                         table.name,
                         column.name,
                     )

@@ -1,8 +1,5 @@
 import { useState } from 'react'
 import {
-  IMPLEMENTED_METHODS,
-  METHOD_DESCRIPTIONS,
-  METHOD_LABELS,
   PROVIDER_IDS,
   PROVIDER_LABELS,
   PROVIDER_TAGLINES,
@@ -10,6 +7,7 @@ import {
   type ProviderId,
   type ProvidersHealth,
 } from '../types'
+import { useMethodCatalog } from '../useMethodCatalog'
 import { Body, Button, Headline, Meta, Panel, SectionLabel, Subhead, Support, Tag, ThinkingIndicator } from './ui'
 
 interface Props {
@@ -39,7 +37,7 @@ export function MethodSelectorView({
   onStart,
   starting,
 }: Props) {
-  const allMethods = Object.keys(METHOD_LABELS)
+  const { methods: allMethods, get, labelOf } = useMethodCatalog()
   const [selectedMethod, setSelectedMethod] = useState<string | null>(null)
   // Each provider remembers its own model pick, so switching back and forth
   // doesn't silently reset the other one to its default.
@@ -64,7 +62,7 @@ export function MethodSelectorView({
   }
 
   function select(method: string) {
-    if (!provider || !IMPLEMENTED_METHODS.has(method) || starting) return
+    if (!provider || starting) return
     setSelectedMethod(method)
   }
 
@@ -76,7 +74,7 @@ export function MethodSelectorView({
       <SectionLabel number="02">Method</SectionLabel>
       <Headline className="mb-2">Method Selector 推薦</Headline>
       <Body className="mb-8 text-foreground/70">
-        系統先用規則排出基準清單，再由 AI 讀完你們填的內容決定要不要調整順序或替換方法。選一個方法，按下方「確定」開始發想。
+        AI 會讀完你們填的內容，從 10 種發想方法裡挑出最適合的 3 個並排序。系統另外用規則排了一份參考順序給它，但最終選擇由 AI 決定。選一個方法，按下方「確定」開始發想。
       </Body>
 
       <div className="mb-10 border-y-2 border-foreground/15 py-6">
@@ -187,11 +185,11 @@ export function MethodSelectorView({
 
       {provider && !recommending && adjustmentNote && (
         <div className="bg-muted border-foreground/10 mb-10 border-l-2 p-4">
-          <Meta className="text-foreground mb-2 block">AI 的調整</Meta>
+          <Meta className="text-foreground mb-2 block">AI 怎麼選的</Meta>
           <Support className="text-foreground/80">{adjustmentNote}</Support>
           {ruleRanking.length > 0 && (
             <Support className="text-foreground/50 mt-3 block">
-              規則原本的順序：{ruleRanking.map((m) => METHOD_LABELS[m] ?? m).join(' → ')}
+              規則的參考順序：{ruleRanking.map(labelOf).join(' → ')}
             </Support>
           )}
         </div>
@@ -200,21 +198,21 @@ export function MethodSelectorView({
       {provider && !recommending && (
         <ol className="flex flex-col">
           {recommendations.map((r) => {
-            const implemented = IMPLEMENTED_METHODS.has(r.method)
             const selected = selectedMethod === r.method
             return (
               <li key={r.id} className="border-t-2 border-foreground/15 py-6 first:border-t-0">
                 <div
-                  role={implemented ? 'button' : undefined}
-                  tabIndex={implemented ? 0 : undefined}
+                  role="button"
+                  tabIndex={0}
+                  aria-pressed={selected}
                   onClick={() => select(r.method)}
                   onKeyDown={(e) => {
-                    if (implemented && (e.key === 'Enter' || e.key === ' ')) {
+                    if (e.key === 'Enter' || e.key === ' ') {
                       e.preventDefault()
                       select(r.method)
                     }
                   }}
-                  className={`-mx-4 flex items-center gap-4 px-4 py-2 ${implemented ? 'cursor-pointer' : ''}`}
+                  className="-mx-4 flex cursor-pointer items-center gap-4 px-4 py-2"
                 >
                   <span
                     className={`h-4 w-4 shrink-0 border-2 ${selected ? 'bg-accent border-accent' : 'border-foreground/40'}`}
@@ -223,16 +221,13 @@ export function MethodSelectorView({
                   <span className="text-accent w-10 shrink-0 text-3xl font-black leading-none">
                     {String(r.rank).padStart(2, '0')}
                   </span>
-                  <Subhead className="flex-1">{METHOD_LABELS[r.method] ?? r.method}</Subhead>
-                  {ruleRanking.length > 0 && !ruleRanking.includes(r.method) && (
-                    <Tag>AI 換上</Tag>
-                  )}
-                  {!implemented && <Tag>尚未實作</Tag>}
+                  <Subhead className="flex-1">{labelOf(r.method)}</Subhead>
+                  {ruleRanking.length > 0 && !ruleRanking.includes(r.method) && <Tag>AI 換上</Tag>}
                 </div>
-  
+
                 <div className="ml-[4.5rem]">
-                  <Body className="mt-3 text-foreground/80">{METHOD_DESCRIPTIONS[r.method]}</Body>
-                  <details className="mt-2" onClick={(e) => e.stopPropagation()}>
+                  <Body className="mt-3 text-foreground/80">{get(r.method)?.description}</Body>
+                  <details className="mt-2">
                     <summary className="cursor-pointer text-xs font-bold uppercase tracking-widest text-foreground/50">
                       更多…
                     </summary>
@@ -242,7 +237,8 @@ export function MethodSelectorView({
               </li>
             )
           })}
-  
+
+
           <li className="border-t-2 border-foreground/15 py-6">
             <details>
               <summary className="cursor-pointer text-xs font-bold uppercase tracking-widest text-foreground/60">
@@ -250,23 +246,19 @@ export function MethodSelectorView({
               </summary>
               <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
                 {allMethods.map((m) => {
-                  const implemented = IMPLEMENTED_METHODS.has(m)
-                  const selected = selectedMethod === m
+                  const selected = selectedMethod === m.name
                   return (
                     <button
-                      key={m}
+                      key={m.name}
                       type="button"
-                      disabled={!implemented || starting}
-                      onClick={() => select(m)}
+                      disabled={starting}
+                      onClick={() => select(m.name)}
                       className={`flex min-h-28 flex-col gap-2 border-2 p-4 text-left transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-40 ${
                         selected ? 'border-accent bg-accent/5' : 'border-foreground hover:bg-muted'
                       }`}
                     >
-                      <div className="flex items-center justify-between gap-2">
-                        <Subhead>{METHOD_LABELS[m]}</Subhead>
-                        {!implemented && <Tag>尚未實作</Tag>}
-                      </div>
-                      <Support className="text-foreground/70 line-clamp-2">{METHOD_DESCRIPTIONS[m]}</Support>
+                      <Subhead>{m.label}</Subhead>
+                      <Support className="text-foreground/70 line-clamp-2">{m.description}</Support>
                     </button>
                   )
                 })}
@@ -278,7 +270,7 @@ export function MethodSelectorView({
 
       <div className="border-foreground mt-4 flex flex-wrap items-center justify-between gap-4 border-t-4 pt-6">
         <Meta className="text-foreground">
-          {selectedMethod ? `已選擇：${METHOD_LABELS[selectedMethod]}` : '尚未選擇方法'}
+          {selectedMethod ? `已選擇：${labelOf(selectedMethod)}` : '尚未選擇方法'}
           {provider &&
             ` · ${PROVIDER_LABELS[provider as ProviderId] ?? provider}${
               activeModelLabel ? ` / ${activeModelLabel}` : ''

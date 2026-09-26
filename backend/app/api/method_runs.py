@@ -51,6 +51,7 @@ def create_method_run(
         step_index=0,
         step_name=agent.steps[0].name,
         question_shown=agent.question_for(0),
+        timer_seconds=agent.steps[0].timer_seconds,
     )
     db.add(first_step)
     db.commit()
@@ -153,6 +154,7 @@ async def answer_step(run_id: int, payload: AnswerStepRequest, db: DbSession = D
                 step_index=next_index,
                 step_name=agent.steps[next_index].name,
                 question_shown=agent.question_for(next_index),
+                timer_seconds=agent.steps[next_index].timer_seconds,
             )
         )
         db.commit()
@@ -160,21 +162,77 @@ async def answer_step(run_id: int, payload: AnswerStepRequest, db: DbSession = D
 
     # last step answered — run the finalize/convergence call
     db.flush()
+    new_ideas = await _finalize(db, run, session)
+    return {
+        "accepted": True,
+        "feedback": None,
+        "method_run": method_run_to_dict(run),
+        "ideas": [idea_to_dict(i) for i in new_ideas],
+    }
+
+
+@router.post("/method-runs/{run_id}/finalize")
+async def retry_finalize(run_id: int, db: DbSession = Depends(get_db)):
+    """Re-run the convergence step for a run whose finalize produced nothing.
+
+    Every answer is already stored, so this replays only the last call — the
+    user doesn't have to walk the whole method again (which, for Crazy 8s,
+    means eight more timed rounds).
+    """
+    run = db.get(MethodRun, run_id)
+    if run is None:
+        raise HTTPException(404, "method run not found")
+    if run.status != "failed":
+        raise HTTPException(400, f"method run is {run.status}; only a failed run can be finalized again")
+
+    session = db.get(IdeationSession, run.session_id)
+    if session is None:
+        raise HTTPException(404, "session not found")
+
+    run.status = "running"  # _finalize decides the outcome from here
+    new_ideas = await _finalize(db, run, session)
+    return {
+        "accepted": True,
+        "feedback": None,
+        "method_run": method_run_to_dict(run),
+        "ideas": [idea_to_dict(i) for i in new_ideas],
+    }
+
+
+async def _finalize(db: DbSession, run: MethodRun, session: IdeationSession) -> list[Idea]:
+    """Converge a finished run's answers into concrete ideas.
+
+    A call that comes back without any ideas leaves the run `failed`, not
+    `done`. The schema now forbids an empty list, but a provider can still
+    hand back something unparseable (codex turns invalid JSON into `None`
+    rather than raising), and marking that `done` used to strand the user:
+    the UI reported success, the idea board was empty, and the run could
+    never be retried.
+    """
+    agent = get_framework_agent(run.method_name)
+    provider = get_provider(run.provider)
     all_steps = sorted(run.steps, key=lambda s: s.step_index)
-    fsystem_prompt, fuser_prompt, fschema = agent.build_finalize_prompt(session, all_steps)
+    system_prompt, user_prompt, schema = agent.build_finalize_prompt(session, all_steps)
+
     try:
-        fresult = await complete_with_quality_guard(
+        result = await complete_with_quality_guard(
             provider,
-            system_prompt=fsystem_prompt,
-            user_prompt=fuser_prompt,
-            json_schema=fschema,
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            json_schema=schema,
             model=run.model,
         )
     except ProviderError as exc:
         raise HTTPException(502, str(exc)) from exc
 
+    log_llm_call(
+        db, result, system_prompt=system_prompt, user_prompt=user_prompt, session_id=run.session_id
+    )
+
     new_ideas = []
-    for item in (fresult.structured or {}).get("ideas", []):
+    for item in (result.structured or {}).get("ideas", []):
+        if not item.get("title") or not item.get("description"):
+            continue
         idea = Idea(
             session_id=run.session_id,
             method_run_id=run.id,
@@ -186,16 +244,12 @@ async def answer_step(run_id: int, payload: AnswerStepRequest, db: DbSession = D
         db.add(idea)
         new_ideas.append(idea)
 
-    log_llm_call(
-        db, fresult, system_prompt=fsystem_prompt, user_prompt=fuser_prompt, session_id=run.session_id
-    )
-    run.status = "done"
-    run.finished_at = dt.datetime.now(dt.timezone.utc)
+    if new_ideas:
+        run.status = "done"
+        run.finished_at = dt.datetime.now(dt.timezone.utc)
+    else:
+        # Retryable, so no finished_at — this run hasn't reached an end state.
+        run.status = "failed"
+        run.finished_at = None
     db.commit()
-
-    return {
-        "accepted": True,
-        "feedback": None,
-        "method_run": method_run_to_dict(run),
-        "ideas": [idea_to_dict(i) for i in new_ideas],
-    }
+    return new_ideas

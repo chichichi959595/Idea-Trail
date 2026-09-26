@@ -59,6 +59,16 @@ _WORD_POOL_C = [
 class RandomInputAgent(FrameworkAgent):
     method_name = "random_input"
     method_label = "隨機刺激（Random Input）"
+    short_label = "隨機刺激"
+    description = (
+        "抽一個完全無關的隨機詞彙，強迫把它跟你們的主題湊在一起，逼出意外的連結。"
+    )
+    tutorial_intro = (
+        "抽一個跟主題完全無關的隨機詞彙，強迫自己把它跟主題湊在一起，用不合理的連結逼出跳脫慣性的點子，適合已經有大方向、只是想不出新意的情況。"
+    )
+    tutorial_how_to = (
+        "先講你們的主題方向，接著系統會給一個隨機詞彙，想辦法硬把它跟主題湊在一起想出一個點子，重複三次後，挑一個比較有潛力的延伸。"
+    )
     steps = [
         StepSpec(
             "topic",

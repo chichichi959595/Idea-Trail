@@ -4,6 +4,15 @@ from .base import FrameworkAgent, StepSpec
 class UserJourneyAgent(FrameworkAgent):
     method_name = "user_journey"
     method_label = "使用者旅程"
+    description = (
+        "把使用情境攤開成完整旅程，找出體驗最差、最值得切入的環節。"
+    )
+    tutorial_intro = (
+        "把使用情境攤開成一段完整的旅程，從旅程裡最痛的那個瞬間找切入點，而不是憑空想功能。"
+    )
+    tutorial_how_to = (
+        "依序描述主角是誰、他為什麼開始這趟旅程、大致經歷哪些步驟、哪個階段最卡，最後指出如果只能改一個瞬間會是哪裡。"
+    )
     steps = [
         StepSpec(
             "who",

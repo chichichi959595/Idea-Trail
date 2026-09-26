@@ -179,6 +179,9 @@ class CodexProvider:
             structured=structured,
             provider=self.name,
             model=model,
+            # `codex exec` reports nothing about which model actually served
+            # the request, so the requested slug is all we can record.
+            resolved_model=model,
             cost_usd=None,
             duration_ms=duration_ms,
             raw=raw,

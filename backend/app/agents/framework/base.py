@@ -10,6 +10,9 @@ from app.db.models import IdeationSession, MethodStep
 class StepSpec:
     name: str
     question: str
+    timer_seconds: Optional[int] = None
+    """Countdown for this step, if the method is time-boxed. Lives here rather
+    than in the frontend so the pacing is part of the method's definition."""
 
 
 STEP_SYSTEM_PROMPT_TEMPLATE = """你是「{method_label}」發想引導流程裡的其中一個步驟 Agent。
@@ -65,6 +68,10 @@ FINALIZE_OUTPUT_SCHEMA = {
     "properties": {
         "ideas": {
             "type": "array",
+            # Without a floor, `{"ideas": []}` satisfies the schema — the model
+            # can return nothing at all and still look like a successful call.
+            "minItems": 2,
+            "maxItems": 4,
             "items": {
                 "type": "object",
                 "properties": {
@@ -106,9 +113,39 @@ def render_history(steps: list[MethodStep]) -> str:
 
 
 class FrameworkAgent:
+    """One ideation method: what it is called, how it is described, and the
+    ordered questions it walks the user through.
+
+    This class is the single source of truth for a method's identity. The
+    rule/LLM method selector reads its label and description to build its
+    prompt, and the frontend reads the same values over `GET /methods` — so
+    a method is never described one way in a prompt and another way on screen.
+    """
+
     method_name: str
     method_label: str
+    """Full name, used in prompts and as a screen heading."""
+    short_label: str = ""
+    """Compact name for tight spots (idea-board tags). Defaults to the full label."""
+    description: str = ""
+    """One sentence on what the method does — shown in the method picker and
+    given to the selector agent so it can reason about the choices."""
+    tutorial_intro: str = ""
+    """What the method is and why it works."""
+    tutorial_how_to: str = ""
+    """How to actually play it inside this flow."""
     steps: list[StepSpec]
+
+    @classmethod
+    def catalog_entry(cls) -> dict:
+        return {
+            "name": cls.method_name,
+            "label": cls.method_label,
+            "short_label": cls.short_label or cls.method_label,
+            "description": cls.description,
+            "tutorial": {"intro": cls.tutorial_intro, "how_to": cls.tutorial_how_to},
+            "step_count": len(cls.steps),
+        }
 
     def question_for(self, index: int) -> str:
         return self.steps[index].question

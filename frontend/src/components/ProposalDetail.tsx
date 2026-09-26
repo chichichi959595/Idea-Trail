@@ -1,7 +1,9 @@
+import { useEffect } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { X } from 'lucide-react'
 import { api } from '../api'
-import { METHOD_LABELS, type Idea } from '../types'
+import { useMethodCatalog } from '../useMethodCatalog'
+import type { Idea } from '../types'
 import { Body, Headline, Meta, SectionLabel, Support } from './ui'
 
 interface Props {
@@ -11,11 +13,22 @@ interface Props {
 }
 
 export function ProposalDetail({ idea, allIdeas, onClose }: Props) {
+  const { labelOf } = useMethodCatalog()
   const { data: run } = useQuery({
     queryKey: ['method-run', idea.method_run_id],
     queryFn: () => api.getMethodRun(idea.method_run_id as number),
     enabled: idea.method_run_id !== null,
   })
+
+  // Escape is the expected way out of a modal; without it the only exit is
+  // hitting the small × or the backdrop.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') onClose()
+    }
+    document.addEventListener('keydown', onKey)
+    return () => document.removeEventListener('keydown', onKey)
+  }, [onClose])
 
   const parents = (idea.parent_idea_ids ?? [])
     .map((pid) => allIdeas.find((i) => i.id === pid))
@@ -27,6 +40,9 @@ export function ProposalDetail({ idea, allIdeas, onClose }: Props) {
       onClick={onClose}
     >
       <div
+        role="dialog"
+        aria-modal="true"
+        aria-label={idea.title}
         className="bg-background border-foreground swiss-grid-pattern relative w-full max-w-2xl border-2 p-6 sm:border-4 sm:p-10"
         onClick={(e) => e.stopPropagation()}
       >
@@ -57,7 +73,7 @@ export function ProposalDetail({ idea, allIdeas, onClose }: Props) {
 
         {run && (
           <div className="border-foreground mt-8 border-t-4 pt-6">
-            <Meta className="mb-5 block">發想歷程時間軸 · {METHOD_LABELS[run.method_name] ?? run.method_name}</Meta>
+            <Meta className="mb-5 block">發想歷程時間軸 · {labelOf(run.method_name)}</Meta>
             <ol className="flex flex-col gap-6">
               {run.steps.map((s) => (
                 <li key={s.id} className="border-foreground/20 border-l-2 pl-4">

@@ -69,7 +69,7 @@ async def recommend_methods(
     log_llm_call(
         db,
         rec_result.result,
-        system_prompt=method_selector.SELECTOR_SYSTEM_PROMPT,
+        system_prompt=rec_result.system_prompt,
         user_prompt=rec_result.user_prompt,
         session_id=session_id,
     )
@@ -116,6 +116,8 @@ async def synthesize(session_id: int, payload: SynthesizeRequest, db: DbSession 
 
     new_ideas = []
     for item in (result.structured or {}).get("ideas", []):
+        if not item.get("title") or not item.get("description"):
+            continue
         idea = Idea(
             session_id=session_id,
             method_run_id=None,
@@ -131,5 +133,10 @@ async def synthesize(session_id: int, payload: SynthesizeRequest, db: DbSession 
     log_llm_call(
         db, result, system_prompt=system_prompt, user_prompt=user_prompt, session_id=session_id
     )
+    if not new_ideas:
+        # Returning an empty list here would look like a successful merge that
+        # simply produced nothing, and the idea board would silently not change.
+        db.commit()  # keep the audit record of the failed attempt
+        raise HTTPException(502, "AI 沒有產出任何整合想法，請再試一次")
     db.commit()
     return [idea_to_dict(i) for i in new_ideas]

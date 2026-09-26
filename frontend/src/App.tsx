@@ -123,6 +123,23 @@ function App() {
     }
   }
 
+  async function handleRetryFinalize() {
+    if (!activeRun) return
+    setAnswering(true)
+    setRunError(null)
+    try {
+      const result = await api.retryFinalize(activeRun.id)
+      setActiveRun(result.method_run)
+      if (result.ideas) {
+        queryClient.invalidateQueries({ queryKey: ['ideas', session?.id] })
+      }
+    } catch (e) {
+      setRunError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setAnswering(false)
+    }
+  }
+
   async function handleSynthesize() {
     if (!session) return
     setSynthesizing(true)
@@ -184,44 +201,45 @@ function App() {
             </nav>
 
             {tab === 'select' && (
-            <MethodSelectorView
-              recommendations={recommendations}
-              ruleRanking={ruleRanking}
-              adjustmentNote={adjustmentNote}
-              providersHealth={providersHealth}
-              provider={provider}
-              model={model}
-              onProviderChange={handleSelectProvider}
-              recommending={recommending}
-              recommendError={recommendError}
-              onStart={handleStartMethod}
-              starting={starting}
-            />
-          )}
+              <MethodSelectorView
+                recommendations={recommendations}
+                ruleRanking={ruleRanking}
+                adjustmentNote={adjustmentNote}
+                providersHealth={providersHealth}
+                provider={provider}
+                model={model}
+                onProviderChange={handleSelectProvider}
+                recommending={recommending}
+                recommendError={recommendError}
+                onStart={handleStartMethod}
+                starting={starting}
+              />
+            )}
 
-          {tab === 'run' && activeRun && (
-            <FrameworkRunView
-              run={activeRun}
-              onAnswer={handleAnswer}
-              submitting={answering}
-              error={runError}
-              feedback={runFeedback}
-              onGoToIdeas={() => setTab('ideas')}
-            />
-          )}
+            {tab === 'run' && activeRun && (
+              <FrameworkRunView
+                run={activeRun}
+                onAnswer={handleAnswer}
+                submitting={answering}
+                error={runError}
+                feedback={runFeedback}
+                onRetryFinalize={handleRetryFinalize}
+                onGoToIdeas={() => setTab('ideas')}
+              />
+            )}
 
-          {tab === 'ideas' && (
-            <IdeaBoard
-              ideas={ideas}
-              selectedIds={selectedIdeaIds}
-              onToggleSelect={toggleSelectIdea}
-              onSynthesize={handleSynthesize}
-              synthesizing={synthesizing}
-              onOpenDetail={setDetailIdea}
-              onBackToMethods={() => setTab('select')}
-              error={synthError}
-            />
-          )}
+            {tab === 'ideas' && (
+              <IdeaBoard
+                ideas={ideas}
+                selectedIds={selectedIdeaIds}
+                onToggleSelect={toggleSelectIdea}
+                onSynthesize={handleSynthesize}
+                synthesizing={synthesizing}
+                onOpenDetail={setDetailIdea}
+                onBackToMethods={() => setTab('select')}
+                error={synthError}
+              />
+            )}
           </>
         )}
 
