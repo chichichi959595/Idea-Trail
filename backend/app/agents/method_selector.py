@@ -12,9 +12,24 @@ METHOD_LABELS = {
     "reverse_thinking": "逆向思考",
     "analogy": "類比法",
     "capability_mapping": "能力對應問題",
+    "how_might_we": "HMW（How Might We）",
+    "mashup": "混搭法（Mash-up）",
+    "random_input": "隨機刺激（Random Input）",
+    "crazy_8s": "Crazy 8s",
 }
 
-IMPLEMENTED_METHODS = {"scamper", "pain_point"}
+IMPLEMENTED_METHODS = {
+    "scamper",
+    "pain_point",
+    "reverse_thinking",
+    "user_journey",
+    "analogy",
+    "capability_mapping",
+    "how_might_we",
+    "mashup",
+    "random_input",
+    "crazy_8s",
+}
 
 _METHOD_ORDER = list(METHOD_LABELS)
 
@@ -29,12 +44,19 @@ def score_methods(session: IdeationSession) -> dict[str, int]:
     if session.has_clear_problem is False:
         scores["pain_point"] += 2
         scores["user_journey"] += 2
+        # 沒有明確方向時，這幾種發散技法也適合拿來先打開選項
+        scores["how_might_we"] += 1
+        scores["mashup"] += 1
+        scores["crazy_8s"] += 1
     if session.has_existing_product:
         scores["scamper"] += 2
         scores["reverse_thinking"] += 1
         scores["analogy"] += 1
     if session.is_tech_driven and session.has_clear_problem is False:
         scores["capability_mapping"] += 2
+    if session.has_clear_problem:
+        # 已經有方向時，隨機刺激比較能發揮強迫聯想的效果
+        scores["random_input"] += 1
     return scores
 
 
