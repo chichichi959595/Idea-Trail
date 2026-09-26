@@ -4,13 +4,56 @@ import asyncio
 import json
 import tempfile
 import time
+import tomllib
 from pathlib import Path
 from typing import Optional
 
-from .base import LLMResult, ProviderError
+from .base import LLMResult, ModelOption, ProviderError
 
 _CONCURRENCY = asyncio.Semaphore(2)
 _TIMEOUT_SECONDS = 180
+
+_CODEX_HOME = Path.home() / ".codex"
+_MODELS_CACHE = _CODEX_HOME / "models_cache.json"
+_CONFIG = _CODEX_HOME / "config.toml"
+
+
+def _cached_models() -> list[ModelOption]:
+    """Read the model list the codex CLI itself caches for this account.
+
+    Codex offers no `models list` command, but it writes what the account may
+    use to ~/.codex/models_cache.json — so the picker shows real options for
+    whoever is logged in here, instead of a hardcoded list that rots.
+    """
+    try:
+        payload = json.loads(_MODELS_CACHE.read_text())
+    except (OSError, json.JSONDecodeError):
+        return []
+
+    entries = [m for m in payload.get("models", []) if isinstance(m, dict)]
+    # "hide" marks internal models (auto-review and friends) that aren't meant
+    # to be picked by hand.
+    listed = [m for m in entries if m.get("visibility") == "list" and m.get("slug")]
+    listed.sort(key=lambda m: (m.get("priority") if m.get("priority") is not None else 999))
+    return [
+        ModelOption(
+            id=m["slug"],
+            label=m.get("display_name") or m["slug"],
+            description=m.get("description") or "",
+        )
+        for m in listed
+    ]
+
+
+def _configured_model() -> Optional[str]:
+    """Whatever `model = ...` this machine's codex config.toml pins, if any."""
+    try:
+        with _CONFIG.open("rb") as fh:
+            config = tomllib.load(fh)
+    except (OSError, tomllib.TOMLDecodeError):
+        return None
+    model = config.get("model")
+    return model if isinstance(model, str) and model else None
 
 
 class CodexProvider:
@@ -25,6 +68,24 @@ class CodexProvider:
     """
 
     name = "codex"
+    label = "Codex"
+
+    @property
+    def default_model(self) -> Optional[str]:
+        configured = _configured_model()
+        if configured:
+            return configured
+        models = self.list_models()
+        return models[0].id if models else None
+
+    def list_models(self) -> list[ModelOption]:
+        models = _cached_models()
+        # A config-pinned model that the cache doesn't list is still a valid
+        # choice here — it's what plain `codex` runs — so keep it selectable.
+        configured = _configured_model()
+        if configured and all(m.id != configured for m in models):
+            models.insert(0, ModelOption(id=configured, label=configured, description="codex 設定檔指定的模型"))
+        return models
 
     async def complete(
         self,
@@ -35,6 +96,9 @@ class CodexProvider:
         model: Optional[str] = None,
     ) -> LLMResult:
         combined_prompt = f"{system_prompt}\n\n{user_prompt}" if system_prompt else user_prompt
+        # Resolve the default here rather than leaving it implicit, so the
+        # logged LLMResult records which model actually ran.
+        model = model or self.default_model
 
         with tempfile.TemporaryDirectory(prefix="codex-run-") as scratch_dir:
             scratch = Path(scratch_dir)

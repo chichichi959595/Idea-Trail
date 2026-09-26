@@ -22,7 +22,7 @@ export function FrameworkRunView({ run, onAnswer, submitting, error, feedback, o
       <div className="mb-8">
         <div className="flex flex-wrap items-center gap-3">
           <Headline>{METHOD_LABELS[run.method_name] ?? run.method_name} 發想中</Headline>
-          <Tag>{run.provider}</Tag>
+          <Tag>{run.model ? `${run.provider} / ${run.model}` : run.provider}</Tag>
         </div>
         {tutorial && (
           <details className="mt-3">
@@ -116,18 +116,24 @@ function AnswerForm({
   timerSeconds: number | null
 }) {
   const [answer, setAnswer] = useState('')
+  const [shake, setShake] = useState(false)
+  const [awaitingConfirm, setAwaitingConfirm] = useState(false)
+  const [readyChecked, setReadyChecked] = useState(false)
   const remaining = useCountdown(timerSeconds)
   const timeUp = timerSeconds !== null && remaining === 0
 
-  // The instant the countdown hits 0, lock the input and move on: whatever
-  // was typed gets sent, and an empty box just skips this step — either way
-  // the flow keeps going without waiting for the user to click 送出.
-  // Sent as a forced answer: the input is locked from here on, so a relevance
-  // rejection would leave the run stuck with no way to revise.
+  // The instant the countdown hits 0, lock the input — but don't advance yet.
+  // Flash the box red first, then hold on a "ready for the next question?"
+  // confirmation so the forced cutoff doesn't yank the user into the next
+  // step mid-thought. The actual (forced) answer is sent once they confirm.
   useEffect(() => {
-    if (!timeUp || submitting) return
-    onAnswer(step.step_index, answer.trim(), true)
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    if (!timeUp) return
+    setShake(true)
+    const timeout = setTimeout(() => {
+      setShake(false)
+      setAwaitingConfirm(true)
+    }, 500)
+    return () => clearTimeout(timeout)
   }, [timeUp])
 
   return (
@@ -168,13 +174,41 @@ function AnswerForm({
       )}
 
       <textarea
-        className={`${textareaClass} min-h-28 resize-y text-lg`}
+        className={`${textareaClass} min-h-28 resize-y text-lg ${
+          shake ? 'animate-shake-red border-accent text-accent' : ''
+        }`}
         value={answer}
         onChange={(e) => setAnswer(e.target.value)}
         placeholder="輸入你的回答…"
         autoFocus
         disabled={timeUp}
       />
+
+      {awaitingConfirm && (
+        <div className="border-accent bg-accent/5 mt-4 flex items-stretch gap-4 border-2 p-3">
+          <div className="flex flex-1 flex-col justify-center gap-1.5">
+            <p className="text-base font-bold">時間到，這題已被強制送出。</p>
+            <label className="flex cursor-pointer items-center gap-2 text-xs font-medium text-foreground/70">
+              <input
+                type="checkbox"
+                className="border-foreground h-3.5 w-3.5 shrink-0 accent-accent"
+                checked={readyChecked}
+                onChange={(e) => setReadyChecked(e.target.checked)}
+              />
+              你準備好下一題了嗎？
+            </label>
+          </div>
+          <Button
+            type="button"
+            className="shrink-0"
+            disabled={!readyChecked || submitting}
+            onClick={() => onAnswer(step.step_index, answer.trim(), true)}
+          >
+            下一題
+          </Button>
+        </div>
+      )}
+
       {error && (
         <p className="border-accent bg-accent/5 text-accent mt-4 border-2 px-4 py-3 text-sm font-bold">
           {error}

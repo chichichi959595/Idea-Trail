@@ -181,7 +181,11 @@ def _render_catalog(exclude: list[str]) -> str:
     return "\n".join(lines)
 
 
-async def recommend(session: IdeationSession, provider_name: str = "claude") -> Recommendation:
+async def recommend(
+    session: IdeationSession,
+    provider_name: str = "claude",
+    model: str | None = None,
+) -> Recommendation:
     scores = score_methods(session)
     baseline = rank_methods(session)
     # With every score at zero the rules have no real opinion (they only read
@@ -224,6 +228,7 @@ async def recommend(session: IdeationSession, provider_name: str = "claude") -> 
         system_prompt=SELECTOR_SYSTEM_PROMPT,
         user_prompt=user_prompt,
         json_schema=_selector_schema(),
+        model=model,
     )
 
     structured = result.structured or {}

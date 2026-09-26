@@ -20,9 +20,12 @@ function App() {
   const [adjustmentNote, setAdjustmentNote] = useState('')
   const [activeRun, setActiveRun] = useState<MethodRun | null>(null)
   const [tab, setTab] = useState<Tab>('select')
-  // '' = no provider chosen yet — neither button should look selected until
+  // '' = no provider chosen yet — neither block should look selected until
   // the user actually picks one (that pick is what kicks off the AI call).
   const [provider, setProvider] = useState('')
+  // Model that goes with the chosen provider; '' = let the backend fall back
+  // to that provider's default.
+  const [model, setModel] = useState('')
   const [selectedIdeaIds, setSelectedIdeaIds] = useState<number[]>([])
   const [detailIdea, setDetailIdea] = useState<Idea | null>(null)
 
@@ -65,16 +68,17 @@ function App() {
   // Fires when the user picks (or switches) the LLM provider on the Method
   // Selector screen — that pick is the actual trigger for the AI call that
   // writes the recommendation rationale, so it's what should show "thinking".
-  async function handleSelectProvider(p: string) {
+  async function handleSelectProvider(p: string, m: string) {
     if (!session) return
     setProvider(p)
+    setModel(m)
     setRecommending(true)
     setRecommendError(null)
     setRecommendations([])
     setRuleRanking([])
     setAdjustmentNote('')
     try {
-      const res = await api.recommendMethods(session.id, p)
+      const res = await api.recommendMethods(session.id, p, m)
       setRecommendations(res.recommendations)
       setRuleRanking(res.rule_ranking)
       setAdjustmentNote(res.adjustment_note)
@@ -91,7 +95,7 @@ function App() {
     setRunError(null)
     setRunFeedback(null)
     try {
-      const run = await api.createMethodRun(session.id, method, provider)
+      const run = await api.createMethodRun(session.id, method, provider, model)
       setActiveRun(run)
       setTab('run')
     } catch (e) {
@@ -124,7 +128,7 @@ function App() {
     setSynthesizing(true)
     setSynthError(null)
     try {
-      await api.synthesize(session.id, selectedIdeaIds, provider)
+      await api.synthesize(session.id, selectedIdeaIds, provider, model)
       setSelectedIdeaIds([])
       queryClient.invalidateQueries({ queryKey: ['ideas', session.id] })
     } catch (e) {
@@ -186,6 +190,7 @@ function App() {
               adjustmentNote={adjustmentNote}
               providersHealth={providersHealth}
               provider={provider}
+              model={model}
               onProviderChange={handleSelectProvider}
               recommending={recommending}
               recommendError={recommendError}

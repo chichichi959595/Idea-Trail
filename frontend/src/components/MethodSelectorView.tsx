@@ -3,7 +3,11 @@ import {
   IMPLEMENTED_METHODS,
   METHOD_DESCRIPTIONS,
   METHOD_LABELS,
+  PROVIDER_IDS,
+  PROVIDER_LABELS,
+  PROVIDER_TAGLINES,
   type MethodRecommendation,
+  type ProviderId,
   type ProvidersHealth,
 } from '../types'
 import { Body, Button, Headline, Meta, Panel, SectionLabel, Subhead, Support, Tag, ThinkingIndicator } from './ui'
@@ -14,7 +18,8 @@ interface Props {
   adjustmentNote: string
   providersHealth: ProvidersHealth | undefined
   provider: string
-  onProviderChange: (p: string) => void
+  model: string
+  onProviderChange: (p: string, model: string) => void
   recommending: boolean
   recommendError: string | null
   onStart: (method: string) => void
@@ -27,6 +32,7 @@ export function MethodSelectorView({
   adjustmentNote,
   providersHealth,
   provider,
+  model,
   onProviderChange,
   recommending,
   recommendError,
@@ -35,11 +41,35 @@ export function MethodSelectorView({
 }: Props) {
   const allMethods = Object.keys(METHOD_LABELS)
   const [selectedMethod, setSelectedMethod] = useState<string | null>(null)
+  // Each provider remembers its own model pick, so switching back and forth
+  // doesn't silently reset the other one to its default.
+  const [modelByProvider, setModelByProvider] = useState<Record<string, string>>({})
+
+  function modelFor(p: ProviderId) {
+    const health = providersHealth?.[p]
+    return modelByProvider[p] ?? health?.default_model ?? health?.models?.[0]?.id ?? ''
+  }
+
+  function selectProvider(p: ProviderId) {
+    if (providersHealth?.[p]?.ok === false || recommending) return
+    onProviderChange(p, modelFor(p))
+  }
+
+  function changeModel(p: ProviderId, nextModel: string) {
+    setModelByProvider((prev) => ({ ...prev, [p]: nextModel }))
+    // Picking a model on the active provider re-runs the recommendation with
+    // it; on the other card it's just a stored preference until that card is
+    // chosen, so an idle dropdown never burns an LLM call.
+    if (p === provider && !recommending) onProviderChange(p, nextModel)
+  }
 
   function select(method: string) {
     if (!provider || !IMPLEMENTED_METHODS.has(method) || starting) return
     setSelectedMethod(method)
   }
+
+  const activeModelLabel =
+    providersHealth?.[provider as ProviderId]?.models?.find((m) => m.id === model)?.label ?? model
 
   return (
     <Panel className="mt-8">
@@ -49,33 +79,104 @@ export function MethodSelectorView({
         系統先用規則排出基準清單，再由 AI 讀完你們填的內容決定要不要調整順序或替換方法。選一個方法，按下方「確定」開始發想。
       </Body>
 
-      <div className="mb-10 flex flex-wrap items-center gap-3 border-y-2 border-foreground/15 py-4">
-        <Meta className="text-foreground">LLM 額度來源</Meta>
-        {(['claude', 'codex'] as const).map((p) => {
-          const health = providersHealth?.[p]
-          const disabled = health?.ok === false || recommending
-          return (
-            <button
-              key={p}
-              type="button"
-              disabled={disabled}
-              onClick={() => onProviderChange(p)}
-              className={`min-h-11 border-2 px-4 text-xs font-bold uppercase tracking-widest transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-40 ${
-                provider === p
-                  ? 'border-accent bg-accent text-background'
-                  : 'border-foreground bg-background text-foreground hover:bg-muted'
-              }`}
-            >
-              {p === 'claude' ? 'Claude Code' : 'Codex'}
-              {health?.ok === false && ' · 無法使用'}
-            </button>
-          )
-        })}
-        {recommending && <ThinkingIndicator label="AI 正在判斷該用哪些方法…" />}
+      <div className="mb-10 border-y-2 border-foreground/15 py-6">
+        <Meta className="text-foreground mb-4 block">LLM 額度來源</Meta>
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+          {PROVIDER_IDS.map((p) => {
+            const health = providersHealth?.[p]
+            const unavailable = health?.ok === false
+            const models = health?.models ?? []
+            const selected = provider === p
+            const currentModel = modelFor(p)
+            const currentDescription = models.find((m) => m.id === currentModel)?.description
+            return (
+              <div
+                key={p}
+                role="button"
+                tabIndex={unavailable ? -1 : 0}
+                aria-pressed={selected}
+                aria-disabled={unavailable || recommending}
+                onClick={() => selectProvider(p)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') {
+                    e.preventDefault()
+                    selectProvider(p)
+                  }
+                }}
+                className={`flex min-h-28 flex-col gap-3 border-2 p-4 text-left transition-colors duration-150 ${
+                  unavailable
+                    ? 'border-foreground/30 cursor-not-allowed opacity-40'
+                    : selected
+                      ? 'border-accent bg-accent/5 cursor-pointer'
+                      : 'border-foreground hover:bg-muted cursor-pointer'
+                }`}
+              >
+                {/* One header row across both cards: name on the left, model
+                    picker on the right, sharing a single baseline. The select
+                    sets the row's height, so every card lines up with the
+                    other no matter how long its description runs. */}
+                <div className="flex items-center justify-between gap-3">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <span
+                      className={`h-4 w-4 shrink-0 border-2 ${
+                        selected ? 'bg-accent border-accent' : 'border-foreground/40'
+                      }`}
+                      aria-hidden
+                    />
+                    <Subhead className="truncate">{PROVIDER_LABELS[p]}</Subhead>
+                    {unavailable && <Tag>無法使用</Tag>}
+                  </div>
+
+                  {/* Clicks here must not bubble up to the card, or opening
+                      the dropdown on the inactive provider would switch
+                      provider and fire an LLM call. */}
+                  <label
+                    className="flex shrink-0 items-center gap-2"
+                    onClick={(e) => e.stopPropagation()}
+                    onKeyDown={(e) => e.stopPropagation()}
+                  >
+                    <Meta>模型</Meta>
+                    <select
+                      value={currentModel}
+                      disabled={unavailable || models.length === 0 || recommending}
+                      onChange={(e) => changeModel(p, e.target.value)}
+                      className="border-foreground bg-background focus:border-accent h-11 max-w-36 border-2 px-2 text-xs font-bold disabled:cursor-not-allowed disabled:opacity-40 focus:outline-none"
+                    >
+                      {models.length === 0 && <option value="">（讀不到清單）</option>}
+                      {models.map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {m.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+
+                {/* Indented past the checkbox so the body text starts on the
+                    same left edge as the provider name. */}
+                <div className="ml-7 flex flex-col gap-1">
+                  <Support className="text-foreground/70">
+                    {unavailable ? '這台機器沒有登入，先在終端機登入後重新整理。' : PROVIDER_TAGLINES[p]}
+                  </Support>
+                  {currentDescription && (
+                    <Support className="text-foreground/50 line-clamp-2">{currentDescription}</Support>
+                  )}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+        {recommending && (
+          <div className="mt-4">
+            <ThinkingIndicator label="AI 正在判斷該用哪些方法…" />
+          </div>
+        )}
       </div>
 
       {!provider && (
-        <Body className="mb-10 text-foreground/60">先選一個上面的模型，AI 才會開始判斷該推薦哪些發想方法。</Body>
+        <Body className="mb-10 text-foreground/60">
+          先選一個上面的方塊（順便挑要用哪個模型），AI 才會開始判斷該推薦哪些發想方法。
+        </Body>
       )}
 
       {recommendError && (
@@ -178,6 +279,10 @@ export function MethodSelectorView({
       <div className="border-foreground mt-4 flex flex-wrap items-center justify-between gap-4 border-t-4 pt-6">
         <Meta className="text-foreground">
           {selectedMethod ? `已選擇：${METHOD_LABELS[selectedMethod]}` : '尚未選擇方法'}
+          {provider &&
+            ` · ${PROVIDER_LABELS[provider as ProviderId] ?? provider}${
+              activeModelLabel ? ` / ${activeModelLabel}` : ''
+            }`}
         </Meta>
         {starting ? (
           <ThinkingIndicator />

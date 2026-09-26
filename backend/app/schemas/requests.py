@@ -20,6 +20,8 @@ class CreateSessionRequest(BaseModel):
 class CreateMethodRunRequest(BaseModel):
     method_name: str
     provider: str = "claude"
+    model: Optional[str] = None
+    """None = the provider's own default model."""
 
 
 class AnswerStepRequest(BaseModel):
@@ -31,3 +33,4 @@ class AnswerStepRequest(BaseModel):
 class SynthesizeRequest(BaseModel):
     idea_ids: list[int]
     provider: str = "claude"
+    model: Optional[str] = None

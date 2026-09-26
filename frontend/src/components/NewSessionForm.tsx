@@ -39,7 +39,9 @@ export function NewSessionForm({ onSubmit, submitting, error }: Props) {
   const [domainOther, setDomainOther] = useState('')
   const [constraints, setConstraints] = useState('')
   const [hasClearProblem, setHasClearProblem] = useState<string>('unknown')
+  const [clearProblemText, setClearProblemText] = useState('')
   const [hasExistingProduct, setHasExistingProduct] = useState<string>('unknown')
+  const [existingProductText, setExistingProductText] = useState('')
 
   const toBool = (v: string) => (v === 'unknown' ? null : v === 'yes')
   const toggle = (list: string[], setList: (v: string[]) => void, opt: string) =>
@@ -57,7 +59,9 @@ export function NewSessionForm({ onSubmit, submitting, error }: Props) {
           domain_pref: combineChips(domainSelected, domainOther) || null,
           constraints_text: constraints || null,
           has_clear_problem: toBool(hasClearProblem),
+          clear_problem_text: (hasClearProblem === 'yes' && clearProblemText.trim()) || null,
           has_existing_product: toBool(hasExistingProduct),
+          existing_product_text: (hasExistingProduct === 'yes' && existingProductText.trim()) || null,
         })
       }}
     >
@@ -124,11 +128,27 @@ export function NewSessionForm({ onSubmit, submitting, error }: Props) {
       </div>
 
       <div className="mt-8 flex flex-col gap-5 border-t-2 border-foreground/15 pt-6">
-        <TriChoice label="目前已經有明確想解決的問題？" value={hasClearProblem} onChange={setHasClearProblem} />
+        <TriChoice
+          label="目前已經有明確想解決的問題？"
+          value={hasClearProblem}
+          onChange={setHasClearProblem}
+          followUp={{
+            label: '那個問題是什麼？',
+            placeholder: '例如：系上的二手書買賣都靠社群貼文，買賣雙方很難對上',
+            value: clearProblemText,
+            onChange: setClearProblemText,
+          }}
+        />
         <TriChoice
           label="有既有產品/題目想改造？"
           value={hasExistingProduct}
           onChange={setHasExistingProduct}
+          followUp={{
+            label: '想改造的是什麼？',
+            placeholder: '例如：去年的社團報名網站，現在流程太繞',
+            value: existingProductText,
+            onChange: setExistingProductText,
+          }}
         />
       </div>
 

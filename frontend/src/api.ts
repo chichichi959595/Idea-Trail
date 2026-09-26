@@ -22,16 +22,19 @@ export const api = {
 
   getSession: (id: number) => request<Session>(`/sessions/${id}`),
 
-  recommendMethods: (sessionId: number, provider = 'claude') =>
-    request<MethodRecommendationResult>(
-      `/sessions/${sessionId}/method-recommendation?provider=${provider}`,
+  recommendMethods: (sessionId: number, provider = 'claude', model?: string | null) => {
+    const params = new URLSearchParams({ provider })
+    if (model) params.set('model', model)
+    return request<MethodRecommendationResult>(
+      `/sessions/${sessionId}/method-recommendation?${params}`,
       { method: 'POST' },
-    ),
+    )
+  },
 
-  createMethodRun: (sessionId: number, methodName: string, provider: string) =>
+  createMethodRun: (sessionId: number, methodName: string, provider: string, model?: string | null) =>
     request<MethodRun>(`/sessions/${sessionId}/method-runs`, {
       method: 'POST',
-      body: JSON.stringify({ method_name: methodName, provider }),
+      body: JSON.stringify({ method_name: methodName, provider, model: model || null }),
     }),
 
   getMethodRun: (runId: number) => request<MethodRun>(`/method-runs/${runId}`),
@@ -44,9 +47,9 @@ export const api = {
 
   listIdeas: (sessionId: number) => request<Idea[]>(`/sessions/${sessionId}/ideas`),
 
-  synthesize: (sessionId: number, ideaIds: number[], provider = 'claude') =>
+  synthesize: (sessionId: number, ideaIds: number[], provider = 'claude', model?: string | null) =>
     request<Idea[]>(`/sessions/${sessionId}/synthesize`, {
       method: 'POST',
-      body: JSON.stringify({ idea_ids: ideaIds, provider }),
+      body: JSON.stringify({ idea_ids: ideaIds, provider, model: model || null }),
     }),
 }

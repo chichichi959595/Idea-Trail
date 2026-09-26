@@ -62,9 +62,39 @@ export interface Idea {
   created_at: string
 }
 
+/** One model the provider will accept, as offered in the picker. */
+export interface ModelOption {
+  id: string
+  label: string
+  description: string
+}
+
+export interface ProviderHealth {
+  ok: boolean
+  label?: string
+  models?: ModelOption[]
+  /** Used when the user doesn't pick one; null = let the CLI decide. */
+  default_model?: string | null
+  detail?: string
+  [key: string]: unknown
+}
+
 export interface ProvidersHealth {
-  claude: { ok: boolean; [key: string]: unknown }
-  codex: { ok: boolean; [key: string]: unknown }
+  claude: ProviderHealth
+  codex: ProviderHealth
+}
+
+export const PROVIDER_IDS = ['claude', 'codex'] as const
+export type ProviderId = (typeof PROVIDER_IDS)[number]
+
+export const PROVIDER_LABELS: Record<ProviderId, string> = {
+  claude: 'Claude Code',
+  codex: 'Codex',
+}
+
+export const PROVIDER_TAGLINES: Record<ProviderId, string> = {
+  claude: '本機 Claude Code 訂閱額度',
+  codex: '本機 ChatGPT / Codex 訂閱額度',
 }
 
 export interface AnswerStepResponse {

@@ -35,6 +35,13 @@ backend/    FastAPI + SQLAlchemy，管理 Agent 流程狀態、儲存發想歷�
 
 使用前請確認對應 CLI 已在本機登入（`claude auth status` / `codex login status`）。
 
+兩者都可以再挑模型：方法選擇頁的來源方塊右半邊就是模型下拉選單，選到的模型會一路帶到
+Method Selector、該次 Method Run 的每一步，以及想法整合。`GET /providers/health`
+會回傳每個 provider 的可用模型清單與預設值 —— Claude 用 CLI 支援的別名
+（sonnet／opus／haiku／fable），Codex 則直接讀本機 `~/.codex/models_cache.json`
+（登入帳號實際能用的清單）與 `config.toml` 指定的預設模型。
+不在清單裡的模型會在呼叫 CLI 前就被擋下（400），不會跑到一半才失敗。
+
 ## 開始使用
 
 ### 後端
@@ -65,5 +72,6 @@ pnpm dev
 
 - 支援多人協作發想（團隊成員各自回答，系統整合意見）
 - 想法之間的合併功能，交給 Synthesizer Agent 產生整合版本
+- 歷史工作台的瀏覽與續接（發想歷程目前寫得進資料庫，但還沒有介面讀得回來）
 - 累積歷史發想案例，作為 Method Selector 推薦邏輯的訓練/驗證資料
 - 若驗證「方法確實影響產出」成立，進一步研究不同領域團隊適合的方法分布

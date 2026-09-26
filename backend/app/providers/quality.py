@@ -1,8 +1,11 @@
 from __future__ import annotations
 
+import logging
 from typing import Optional
 
 from .base import LLMProvider, LLMResult
+
+logger = logging.getLogger(__name__)
 
 
 def _strings_in(obj) -> list:
@@ -41,5 +44,14 @@ async def complete_with_quality_guard(provider: LLMProvider, **kwargs) -> LLMRes
     like placeholder filler rather than a real answer."""
     result = await provider.complete(**kwargs)
     if kwargs.get("json_schema") is not None and looks_degenerate(result.structured):
+        # Only the retry's result gets logged to llm_calls, so without this
+        # line a retried call just looks like one inexplicably slow call —
+        # which is exactly what makes a "fast" model look slow.
+        logger.warning(
+            "quality guard: %s/%s returned placeholder-ish output after %sms — retrying",
+            result.provider,
+            result.model,
+            result.duration_ms,
+        )
         result = await provider.complete(**kwargs)
     return result

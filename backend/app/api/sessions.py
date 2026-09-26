@@ -11,7 +11,7 @@ from app.db.models import Idea, IdeationSession, MethodRecommendation
 from app.db.session import get_db
 from app.providers.base import ProviderError
 from app.providers.quality import complete_with_quality_guard
-from app.providers.registry import get_provider
+from app.providers.registry import get_provider, resolve_model
 from app.schemas.requests import CreateSessionRequest, SynthesizeRequest
 
 router = APIRouter(prefix="/sessions", tags=["sessions"])
@@ -34,13 +34,23 @@ def get_session(session_id: int, db: DbSession = Depends(get_db)):
 
 
 @router.post("/{session_id}/method-recommendation")
-async def recommend_methods(session_id: int, provider: str = "claude", db: DbSession = Depends(get_db)):
+async def recommend_methods(
+    session_id: int,
+    provider: str = "claude",
+    model: str | None = None,
+    db: DbSession = Depends(get_db),
+):
     session = db.get(IdeationSession, session_id)
     if session is None:
         raise HTTPException(404, "session not found")
 
     try:
-        rec_result = await method_selector.recommend(session, provider)
+        resolved_model = resolve_model(provider, model)
+    except ValueError as exc:
+        raise HTTPException(400, str(exc)) from exc
+
+    try:
+        rec_result = await method_selector.recommend(session, provider, resolved_model)
     except ProviderError as exc:
         raise HTTPException(502, str(exc)) from exc
 
@@ -95,7 +105,11 @@ async def synthesize(session_id: int, payload: SynthesizeRequest, db: DbSession 
     try:
         provider = get_provider(payload.provider)
         result = await complete_with_quality_guard(
-            provider, system_prompt=system_prompt, user_prompt=user_prompt, json_schema=schema
+            provider,
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            json_schema=schema,
+            model=resolve_model(payload.provider, payload.model),
         )
     except (ProviderError, ValueError) as exc:
         raise HTTPException(502, str(exc)) from exc

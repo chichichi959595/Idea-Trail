@@ -13,7 +13,7 @@ from app.db.models import Idea, IdeationSession, MethodRun, MethodStep
 from app.db.session import get_db
 from app.providers.base import ProviderError
 from app.providers.quality import complete_with_quality_guard
-from app.providers.registry import get_provider
+from app.providers.registry import get_provider, resolve_model
 from app.schemas.requests import AnswerStepRequest, CreateMethodRunRequest
 
 router = APIRouter(tags=["method-runs"])
@@ -29,6 +29,9 @@ def create_method_run(
 
     try:
         agent = get_framework_agent(payload.method_name)
+        # Validates the provider too, and pins whichever model this run will
+        # use for every one of its steps.
+        model = resolve_model(payload.provider, payload.model)
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
 
@@ -36,6 +39,7 @@ def create_method_run(
         session_id=session_id,
         method_name=payload.method_name,
         provider=payload.provider,
+        model=model,
         status="running",
         current_step_index=0,
     )
