@@ -210,10 +210,18 @@ class CodexProvider:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
+        except FileNotFoundError as exc:
+            return {"ok": False, "detail": str(exc)}
+        try:
             stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=15)
-        except (asyncio.TimeoutError, FileNotFoundError) as exc:
+        except asyncio.TimeoutError as exc:
+            # Otherwise the probe returns and the CLI keeps running unreaped.
+            proc.kill()
             return {"ok": False, "detail": str(exc)}
 
         text = (stdout.decode(errors="replace") + stderr.decode(errors="replace")).strip()
         ok = proc.returncode == 0 and "logged in" in text.lower()
-        return {"ok": ok, "detail": text}
+        # `detail` only on failure. On success this CLI prints the signed-in
+        # account, and /providers/health is fetched by the browser on every
+        # load — the failure text is the part that is actually actionable.
+        return {"ok": True} if ok else {"ok": False, "detail": text}

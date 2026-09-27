@@ -190,8 +190,13 @@ class ClaudeCodeProvider:
                 stdout=asyncio.subprocess.PIPE,
                 stderr=asyncio.subprocess.PIPE,
             )
+        except FileNotFoundError as exc:
+            return {"ok": False, "detail": str(exc)}
+        try:
             stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=15)
-        except (asyncio.TimeoutError, FileNotFoundError) as exc:
+        except asyncio.TimeoutError as exc:
+            # Otherwise the probe returns and the CLI keeps running unreaped.
+            proc.kill()
             return {"ok": False, "detail": str(exc)}
 
         if proc.returncode != 0:
@@ -202,9 +207,11 @@ class ClaudeCodeProvider:
         except json.JSONDecodeError:
             return {"ok": False, "detail": "could not parse `claude auth status` output"}
 
+        # No `email`: /providers/health is fetched by the browser on every
+        # load, and nothing in the UI reads it — so returning the logged-in
+        # account's address only puts an identifier somewhere it isn't needed.
         return {
             "ok": bool(status.get("loggedIn")),
             "authMethod": status.get("authMethod"),
             "subscriptionType": status.get("subscriptionType"),
-            "email": status.get("email"),
         }

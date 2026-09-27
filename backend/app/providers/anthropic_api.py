@@ -214,7 +214,12 @@ class AnthropicAPIProvider:
                     delta = event.delta
                     if delta.type == "thinking_delta":
                         yield StreamEvent("thinking", text=delta.thinking)
-                    elif delta.type == "text_delta":
+                    elif delta.type == "text_delta" and json_schema is None:
+                        # With a schema in play the text deltas are the raw
+                        # JSON body. The client shows `text` in the same panel
+                        # as `thinking`, so streaming them would put a wall of
+                        # braces where the reasoning should be — and every
+                        # call this app makes is a structured one.
                         yield StreamEvent("text", text=delta.text)
                 message = await stream.get_final_message()
         except anthropic.APIStatusError as exc:

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 from dataclasses import asdict
 from typing import Dict, Optional
 
@@ -57,9 +58,13 @@ def resolve_step_model(provider_name: str, model: Optional[str]) -> Optional[str
 
 
 async def health_report() -> dict:
+    # Concurrently: two of these spawn a CLI and the third makes a network
+    # round-trip, and the method picker can't render until all three land.
+    # Run serially they add up to the slowest first paint in the app.
+    entries = await asyncio.gather(*(p.health() for p in _PROVIDERS.values()))
+
     report = {}
-    for name, provider in _PROVIDERS.items():
-        entry = await provider.health()
+    for (name, provider), entry in zip(_PROVIDERS.items(), entries):
         entry["label"] = provider.label
         entry["models"] = [asdict(m) for m in provider.list_models()]
         entry["default_model"] = provider.default_model
