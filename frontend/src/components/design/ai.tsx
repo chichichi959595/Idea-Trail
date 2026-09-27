@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { BrainIcon, SparklesIcon } from 'lucide-react'
+import { BrainIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Markdown } from '@/components/ui/markdown'
 import { Loader } from '@/components/ui/loader'
@@ -121,29 +121,14 @@ export function AiReasoning({
   )
 }
 
-/** The model's marker in the transcript. Only the model gets one: the user's
- * own turn is marked by which side of the conversation it sits on, and a second
- * glyph opposite this one only asked the reader to decode two icons instead of
- * none. */
-function AiAvatar() {
-  return (
-    <span
-      aria-hidden
-      className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full border border-ai-border bg-ai-muted text-ai"
-    >
-      <SparklesIcon className="size-3.5" />
-    </span>
-  )
-}
-
 /**
  * One turn in the ideation transcript, on prompt-kit's `Message`.
  *
  * The user's answers get a filled bubble on the right; the model's replies sit
- * on the left with no bubble at all. That asymmetry is the convention every
- * current AI product uses, and it earns its keep here: it makes a long run
- * scannable as "what I said" versus "what came back" without a single label —
- * and without an avatar on both sides.
+ * on the left as plain text. Which side a turn is on is the whole signal — no
+ * avatars on either side. Two of them meant reading two glyphs to learn what
+ * the alignment had already said, and a sparkle next to every single thing the
+ * model says stops meaning anything by the third step.
  */
 export function Turn({
   role,
@@ -175,9 +160,8 @@ export function Turn({
   }
 
   return (
-    <Message className={cn('items-start gap-3', className)}>
-      <AiAvatar />
-      <div className="flex min-w-0 flex-1 flex-col gap-1.5">
+    <Message className={cn('flex-col items-start gap-1.5', className)}>
+      <div className="flex w-full min-w-0 flex-col gap-1.5">
         {label && <Eyebrow>{label}</Eyebrow>}
         {markdown ? (
           <AiMarkdown>{children as string}</AiMarkdown>

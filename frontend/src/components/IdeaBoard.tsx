@@ -5,7 +5,13 @@ import { cn } from '@/lib/utils'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
-import { Page, Section, SectionHeader, StickyFooter } from '@/components/design/section'
+import {
+  Screen,
+  ScreenBody,
+  ScreenFooter,
+  ScreenHeader,
+  Section,
+} from '@/components/design/section'
 import { Small, Subhead } from '@/components/design/typography'
 import { EmptyState, ErrorState } from '@/components/design/states'
 import { AiReasoning, AiWorking } from '@/components/design/ai'
@@ -45,20 +51,27 @@ export function IdeaBoard({
   const enoughSelected = selectedIds.length >= 2
 
   return (
-    <Page>
-      <Section>
-        <SectionHeader
-          eyebrow={`${ideas.length} 個候選`}
-          title="想法牆"
-          description="勾選兩個以上送給 Idea Synthesizer 組合延伸；點標題可以看完整發想歷程。"
-          actions={
-            <Button variant="outline" size="sm" onClick={onBackToMethods}>
-              <PlusIcon />
-              另一個方法
-            </Button>
-          }
-        />
+    <Screen>
+      <ScreenHeader
+        title="想法牆"
+        description="勾選兩個以上送給 Idea Synthesizer 組合延伸；點標題可以看完整發想歷程。"
+        meta={
+          ideas.length > 0 && (
+            <Small data-numeric className="text-xs">
+              {ideas.length} 個候選
+            </Small>
+          )
+        }
+        actions={
+          <Button variant="outline" size="sm" onClick={onBackToMethods}>
+            <PlusIcon />
+            另一個方法
+          </Button>
+        }
+      />
 
+      <ScreenBody>
+        <Section>
         {ideas.length === 0 ? (
           <EmptyState
             icon={LightbulbIcon}
@@ -95,10 +108,11 @@ export function IdeaBoard({
             <AiReasoning text={thinking} streaming />
           </div>
         )}
-      </Section>
+        </Section>
+      </ScreenBody>
 
       {ideas.length > 0 && (
-        <StickyFooter>
+        <ScreenFooter>
           <Small className="text-xs">
             {enoughSelected
               ? `已選 ${selectedIds.length} 個，可以整合`
@@ -112,9 +126,9 @@ export function IdeaBoard({
             <CombineIcon />
             {enoughSelected ? `整合這 ${selectedIds.length} 個想法` : '整合選取的想法'}
           </Button>
-        </StickyFooter>
+        </ScreenFooter>
       )}
-    </Page>
+    </Screen>
   )
 }
 

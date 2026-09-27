@@ -177,9 +177,14 @@ export function Chip({
 }
 
 /**
- * Segmented control for a small closed set — the intake form's 是/否/不確定.
- * A single bordered track with the active segment lifted onto a surface, rather
- * than the old three abutting boxes with negative margins holding them together.
+ * Segmented control for a small closed set — 是/否/不確定, light/dark/system.
+ *
+ * The active segment is a thumb that *slides* between positions rather than a
+ * background that blinks from one option to the next. That motion is the whole
+ * point of the control: it says these options are one value being moved, not
+ * three buttons that happen to sit together. Equal-width columns are what make
+ * the slide honest — the thumb travels exactly one column per step, so it can
+ * be positioned with a transform instead of measuring every label.
  */
 export function SegmentedControl<T extends string>({
   options,
@@ -194,15 +199,29 @@ export function SegmentedControl<T extends string>({
   className?: string
   'aria-label'?: string
 }) {
+  const activeIndex = options.findIndex((opt) => opt.value === value)
+
   return (
     <div
       role="radiogroup"
       aria-label={ariaLabel}
       className={cn(
-        'inline-flex items-center gap-0.5 rounded-lg border border-border bg-muted p-0.5',
+        'relative inline-grid rounded-lg border border-border bg-muted p-0.5',
         className,
       )}
+      style={{ gridTemplateColumns: `repeat(${options.length}, minmax(0, 1fr))` }}
     >
+      {activeIndex >= 0 && (
+        <span
+          aria-hidden
+          className="absolute inset-y-0.5 left-0.5 rounded-md bg-surface shadow-xs transition-transform duration-200 ease-[var(--ease-out-quint)]"
+          style={{
+            // The track inside the 2px padding, divided by the column count.
+            width: `calc((100% - 0.25rem) / ${options.length})`,
+            transform: `translateX(${activeIndex * 100}%)`,
+          }}
+        />
+      )}
       {options.map((opt) => {
         const active = value === opt.value
         return (
@@ -213,11 +232,10 @@ export function SegmentedControl<T extends string>({
             aria-checked={active}
             onClick={() => onChange(opt.value)}
             className={cn(
-              'h-7 rounded-md px-3 text-sm font-medium transition-[color,background-color,box-shadow] duration-150',
+              'relative z-10 flex h-7 items-center justify-center rounded-md px-3 text-sm font-medium',
+              'transition-colors duration-150',
               'focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none',
-              active
-                ? 'bg-surface text-foreground shadow-xs'
-                : 'text-muted-foreground hover:text-foreground',
+              active ? 'text-foreground' : 'text-muted-foreground hover:text-foreground',
             )}
           >
             {opt.label}

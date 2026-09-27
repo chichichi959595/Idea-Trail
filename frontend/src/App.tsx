@@ -1,10 +1,11 @@
-import { useRef, useState } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
 import { api, isStopped } from './api'
 import type { Idea, MethodRecommendation, MethodRun, Session } from './types'
-import { NewSessionForm } from './components/NewSessionForm'
-import { MethodSelectorView } from './components/MethodSelectorView'
+import { EMPTY_INTAKE, toSessionPayload, type Intake } from './intake'
+import { LandingScreen } from './components/LandingScreen'
+import { SetupView } from './components/SetupView'
 import { FrameworkRunView } from './components/FrameworkRunView'
 import { IdeaBoard } from './components/IdeaBoard'
 import { ProposalDetail } from './components/ProposalDetail'
@@ -18,7 +19,17 @@ function App() {
   const queryClient = useQueryClient()
   const { get: getMethod } = useMethodCatalog()
 
+  // The session row, once there is one. It is created lazily — see
+  // `ensureSession` — so this stays null while the user is still filling in the
+  // setup screen.
   const [session, setSession] = useState<Session | null>(null)
+  // Whether the user has left the landing screen. Separate from `session`,
+  // because entering the workbench no longer writes anything.
+  const [started, setStarted] = useState(false)
+  // The team's answers, live. They live here rather than in the form because
+  // the form is now one section of a screen the user comes back to, and because
+  // every call that reads them has to be able to save them first.
+  const [intake, setIntake] = useState<Intake>(EMPTY_INTAKE)
   const [recommendations, setRecommendations] = useState<MethodRecommendation[]>([])
   const [ruleRanking, setRuleRanking] = useState<string[]>([])
   const [adjustmentNote, setAdjustmentNote] = useState('')
@@ -36,8 +47,6 @@ function App() {
   const [selectedIdeaIds, setSelectedIdeaIds] = useState<number[]>([])
   const [detailIdea, setDetailIdea] = useState<Idea | null>(null)
 
-  const [creatingSession, setCreatingSession] = useState(false)
-  const [sessionError, setSessionError] = useState<string | null>(null)
   const [recommending, setRecommending] = useState(false)
   const [recommendError, setRecommendError] = useState<string | null>(null)
   const [starting, setStarting] = useState(false)
@@ -73,25 +82,45 @@ function App() {
     enabled: !!session,
   })
 
-  async function handleCreateSession(payload: Partial<Session>) {
-    setCreatingSession(true)
-    setSessionError(null)
-    try {
-      const s = await api.createSession(payload)
-      setSession(s)
-      setTab('select')
-    } catch (e) {
-      setSessionError(e instanceof Error ? e.message : String(e))
-    } finally {
-      setCreatingSession(false)
+  const updateIntake = useCallback(
+    (patch: Partial<Intake>) => setIntake((prev) => ({ ...prev, ...patch })),
+    [],
+  )
+
+  // What was last written to the session row, so an unchanged intake doesn't
+  // cost a request on every call.
+  const savedIntake = useRef('')
+
+  /**
+   * The session row, created or brought up to date on demand.
+   *
+   * Nothing is written when the user enters the workbench, only when they first
+   * ask for something that reads their answers. That matters because the setup
+   * screen is editable and revisitable: the row has to follow the form, and an
+   * abandoned visit shouldn't leave an empty session behind.
+   */
+  async function ensureSession(): Promise<Session> {
+    const payload = toSessionPayload(intake)
+    const key = JSON.stringify(payload)
+    if (!session) {
+      const created = await api.createSession(payload)
+      setSession(created)
+      savedIntake.current = key
+      return created
     }
+    if (key !== savedIntake.current) {
+      const updated = await api.updateSession(session.id, payload)
+      setSession(updated)
+      savedIntake.current = key
+      return updated
+    }
+    return session
   }
 
   // Fires when the user picks (or switches) the LLM provider on the Method
   // Selector screen — that pick is the actual trigger for the AI call that
   // writes the recommendation rationale, so it's what should show "thinking".
   async function handleSelectProvider(p: string, m: string, stepM: string) {
-    if (!session) return
     setProvider(p)
     setModel(m)
     setStepModel(stepM)
@@ -102,7 +131,8 @@ function App() {
     setAdjustmentNote('')
     setThinking('')
     try {
-      const res = await api.recommendMethods(session.id, p, m, collect)
+      const target = await ensureSession()
+      const res = await api.recommendMethods(target.id, p, m, collect)
       setRecommendations(res.recommendations)
       setRuleRanking(res.rule_ranking)
       setAdjustmentNote(res.adjustment_note)
@@ -117,7 +147,6 @@ function App() {
   // because picking a method by hand doesn't require having run the AI
   // recommendation — so `provider` here may still be empty when a run starts.
   async function handleStartMethod(method: string, p: string, m: string, stepM: string) {
-    if (!session) return
     setProvider(p)
     setModel(m)
     setStepModel(stepM)
@@ -125,7 +154,8 @@ function App() {
     setRunError(null)
     setRunFeedback(null)
     try {
-      const run = await api.createMethodRun(session.id, method, p, m, stepM)
+      const target = await ensureSession()
+      const run = await api.createMethodRun(target.id, method, p, m, stepM)
       setActiveRun(run)
       setTab('run')
     } catch (e) {
@@ -257,7 +287,7 @@ function App() {
   const navSteps: NavStep[] = [
     {
       id: 'select',
-      label: '方法選擇',
+      label: '開始設定',
       state: activeRun ? 'done' : 'current',
     },
     {
@@ -275,16 +305,10 @@ function App() {
     },
   ]
 
-  // Before a session exists there is no shell — the intake form is the whole
+  // Before the user starts there is no shell — the landing screen is the whole
   // screen, because there is nothing yet for a rail to be about.
-  if (!session) {
-    return (
-      <NewSessionForm
-        onSubmit={handleCreateSession}
-        submitting={creatingSession}
-        error={sessionError}
-      />
-    )
+  if (!started) {
+    return <LandingScreen onStart={() => setStarted(true)} />
   }
 
   return (
@@ -295,7 +319,7 @@ function App() {
         onNavigate={(id) => setTab(id as Tab)}
         aside={
           <SessionAside
-            session={session}
+            intake={intake}
             provider={provider}
             model={model}
             stepModel={stepModel}
@@ -305,7 +329,9 @@ function App() {
         }
       >
         {tab === 'select' && (
-          <MethodSelectorView
+          <SetupView
+            intake={intake}
+            onIntakeChange={updateIntake}
             recommendations={recommendations}
             ruleRanking={ruleRanking}
             adjustmentNote={adjustmentNote}

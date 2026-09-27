@@ -328,3 +328,35 @@ def test_timed_steps_carry_their_countdown(client, session_id, start_run):
         f"/method-runs/{run['id']}/answer", json={"step_index": 0, "answer": "學生常常忘記繳交作業"}
     ).json()
     assert res["method_run"]["steps"][1]["timer_seconds"] == 30
+
+
+# --------------------------------------------------------------------------
+# editing the intake after the fact
+# --------------------------------------------------------------------------
+
+
+def test_put_session_replaces_the_intake_answers(client, session_id):
+    """The setup screen can be returned to and corrected, so the stored row has
+    to be able to follow the form — including having a field cleared."""
+    res = client.put(
+        f"/sessions/{session_id}",
+        json={
+            "team_size": 5,
+            "time_budget": "一個學期",
+            "tech_background": "後端",
+            "has_clear_problem": False,
+        },
+    )
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["team_size"] == 5
+    assert body["tech_background"] == "後端"
+    # Omitted fields are cleared, not kept: this is a replace.
+    assert body["clear_problem_text"] is None
+    assert body["domain_pref"] is None
+
+    assert client.get(f"/sessions/{session_id}").json()["team_size"] == 5
+
+
+def test_put_session_404s_for_an_unknown_session(client):
+    assert client.put("/sessions/9999", json={"team_size": 2}).status_code == 404

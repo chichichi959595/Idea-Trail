@@ -26,12 +26,23 @@ import {
   CollapsibleTrigger,
 } from '@/components/ui/collapsible'
 import { Selectable } from '@/components/design/selectable'
-import { Page, Section, SectionHeader, StickyFooter } from '@/components/design/section'
+import {
+  Screen,
+  ScreenBody,
+  ScreenFooter,
+  ScreenHeader,
+  Section,
+  SectionHeader,
+} from '@/components/design/section'
 import { Eyebrow, Small, Subhead } from '@/components/design/typography'
 import { EmptyState, ErrorState, Notice, RowSkeleton } from '@/components/design/states'
 import { AiMarkdown, AiReasoning, AiWorking } from '@/components/design/ai'
+import { SessionIntake } from './SessionIntake'
+import type { Intake } from '../intake'
 
 interface Props {
+  intake: Intake
+  onIntakeChange: (patch: Partial<Intake>) => void
   recommendations: MethodRecommendation[]
   ruleRanking: string[]
   adjustmentNote: string
@@ -57,7 +68,9 @@ const ROLE_LABELS: Record<Role, string> = {
   step: '引導步驟',
 }
 
-export function MethodSelectorView({
+export function SetupView({
+  intake,
+  onIntakeChange,
   recommendations,
   ruleRanking,
   adjustmentNote,
@@ -146,11 +159,20 @@ export function MethodSelectorView({
       : labelForModelOf(draft, draftDeep)
 
   return (
-    <Page>
-      <div className="flex flex-col gap-10">
+    <Screen>
+      <ScreenHeader
+        title="開始設定"
+        description="團隊條件、要用誰的額度、用哪一種發想方法 — 這一頁決定接下來那段對話怎麼進行。"
+      />
+
+      <ScreenBody className="gap-10">
+        <Section>
+          <SessionIntake value={intake} onChange={onIntakeChange} />
+        </Section>
+
         <Section>
           <SectionHeader
-            eyebrow="01"
+            eyebrow="02"
             title="選一個額度來源"
             description="選一張卡片跟要用的模型，再按下面的按鈕確認。確認之後 AI 才會讀你們填的內容、開始排方法。"
           />
@@ -284,7 +306,7 @@ export function MethodSelectorView({
 
         <Section>
           <SectionHeader
-            eyebrow="02"
+            eyebrow="03"
             title="選一個發想方法"
             description="系統先用規則排了一份參考順序，最終的排名與理由由 AI 決定。"
           />
@@ -306,12 +328,9 @@ export function MethodSelectorView({
                and two identical primary buttons in one eyeful read as a mistake
                rather than as a choice. */
             <EmptyState
-              icon={WandSparklesIcon}
-              eyebrow="等你按上面的按鈕"
-              title="AI 會幫你們挑方法"
               description={
                 <>
-                  按下「{confirmLabel}」之後，它會讀你們剛剛填的團隊條件，
+                  按下「{confirmLabel}」之後，AI 會讀你們填的團隊條件，
                   從 10 種發想方法裡排出最適合的 3 個，並且逐一說明為什麼是這幾個。
                   你也可以不理它，直接從下面的完整清單自己挑。
                 </>
@@ -394,9 +413,9 @@ export function MethodSelectorView({
             </Collapsible>
           )}
         </Section>
-      </div>
+      </ScreenBody>
 
-      <StickyFooter>
+      <ScreenFooter>
         {/* Names the draft, not the settings the last recommendation ran on:
             the draft is what the run will actually be started with. */}
         <Small className="min-w-0 text-xs">
@@ -427,8 +446,8 @@ export function MethodSelectorView({
             <ArrowRightIcon />
           </Button>
         )}
-      </StickyFooter>
-    </Page>
+      </ScreenFooter>
+    </Screen>
   )
 }
 

@@ -1,9 +1,5 @@
-import {
-  PROVIDER_LABELS,
-  type ProviderId,
-  type ProvidersHealth,
-  type Session,
-} from '@/types'
+import { PROVIDER_LABELS, type ProviderId, type ProvidersHealth } from '@/types'
+import { toSessionPayload, type Intake } from '@/intake'
 import { Eyebrow, Mono } from '@/components/design/typography'
 
 /**
@@ -14,16 +10,20 @@ import { Eyebrow, Mono } from '@/components/design/typography'
  * footer, and the intake answers disappeared the moment the form was submitted,
  * even though every recommendation the model makes is derived from them. Here
  * they stay on screen for the whole session.
+ *
+ * The facts come from the live form rather than from the saved row, so editing
+ * the setup screen is reflected here as it's typed — and before anything has
+ * been written at all.
  */
 export function SessionAside({
-  session,
+  intake,
   provider,
   model,
   stepModel,
   providersHealth,
   ideaCount,
 }: {
-  session: Session
+  intake: Intake
   provider: string
   model: string
   stepModel: string
@@ -34,11 +34,12 @@ export function SessionAside({
   const labelForModel = (id: string) =>
     health?.models?.find((m) => m.id === id)?.label ?? id
 
+  const answers = toSessionPayload(intake)
   const facts = [
-    session.team_size !== null && { label: '人數', value: `${session.team_size} 人` },
-    session.time_budget && { label: '時間', value: session.time_budget },
-    session.tech_background && { label: '技術', value: session.tech_background },
-    session.domain_pref && { label: '領域', value: session.domain_pref },
+    answers.team_size != null && { label: '人數', value: `${answers.team_size} 人` },
+    answers.time_budget && { label: '時間', value: answers.time_budget },
+    answers.tech_background && { label: '技術', value: answers.tech_background },
+    answers.domain_pref && { label: '領域', value: answers.domain_pref },
     ideaCount > 0 && { label: '候選', value: `${ideaCount} 個想法` },
   ].filter((f): f is { label: string; value: string } => Boolean(f))
 

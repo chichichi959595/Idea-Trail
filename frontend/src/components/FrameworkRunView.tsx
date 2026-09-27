@@ -2,8 +2,8 @@ import { useEffect, useState } from 'react'
 import {
   ArrowRightIcon,
   ArrowUpIcon,
+  ChevronDownIcon,
   CircleCheckIcon,
-  CircleHelpIcon,
   RotateCcwIcon,
   SendHorizonalIcon,
   SquareIcon,
@@ -14,11 +14,6 @@ import type { MethodRun, MethodStep } from '../types'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
-import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from '@/components/ui/collapsible'
 import {
   PromptInput,
   PromptInputAction,
@@ -32,8 +27,8 @@ import {
   ChatContainerScrollAnchor,
 } from '@/components/ui/chat-container'
 import { ScrollButton } from '@/components/ui/scroll-button'
-import { Section } from '@/components/design/section'
-import { Eyebrow, Heading, Small } from '@/components/design/typography'
+import { Screen, ScreenHeader } from '@/components/design/section'
+import { Eyebrow, Small } from '@/components/design/typography'
 import { ErrorState, Notice } from '@/components/design/states'
 import { AiReasoning, AiWorking, Turn } from '@/components/design/ai'
 
@@ -82,18 +77,28 @@ export function FrameworkRunView({
   onGoToIdeas,
 }: Props) {
   const { get, labelOf } = useMethodCatalog()
+  const currentStep = run.steps.find((s) => s.step_index === run.current_step_index)
+  // Where the transcript ends.
+  //
+  // A finished run leaves `current_step_index` *on* its last step rather than
+  // advancing past it — there is no next step to point at. So on anything but a
+  // running run the final step is history too, and slicing at
+  // `current_step_index` silently dropped the last question and its answer from
+  // the screen the moment the run completed. (They were never lost: the idea
+  // wall's history read them straight from the run, which is how this showed up
+  // as "the transcript is missing one exchange the history still has".)
+  const historyEnd = run.status === 'running' ? run.current_step_index : run.steps.length
   // Every step already answered *or* deliberately skipped. Filtering on
   // `user_answer !== null` used to silently drop timed-out steps from the
   // history, so a Crazy 8s run could show fewer rounds than it actually ran.
-  const pastSteps = run.steps.filter((s) => s.step_index < run.current_step_index)
-  const currentStep = run.steps.find((s) => s.step_index === run.current_step_index)
+  const pastSteps = run.steps.filter((s) => s.step_index < historyEnd)
   const method = get(run.method_name)
   const tutorial = method?.tutorial
   // From the catalog, not from `run.steps`: the backend writes one MethodStep
   // row at a time, so `run.steps.length` is always `current_step_index + 1`
   // while a run is in flight. Using it as the denominator made the counter
-  // read "1 / 1", then "2 / 2" — every step claiming to be the last one, and
-  // the progress bar permanently full. `step_count` is the real total.
+  // read "1 / 1", then "2 / 2" — every step claiming to be the last one.
+  // `step_count` is the real total.
   const totalSteps = method?.step_count ?? run.steps.length
 
   const running = run.status === 'running' && currentStep
@@ -104,6 +109,7 @@ export function FrameworkRunView({
   // Sticky for the rest of the run: the composer moves down on the first send
   // and stays there. A rejected answer must not float it back to the middle.
   const [hasSent, setHasSent] = useState(false)
+  const [showTutorial, setShowTutorial] = useState(false)
 
   const stepId = currentStep?.id
   // A genuinely new question starts with an empty box. (A *rejected* answer
@@ -187,7 +193,7 @@ export function FrameworkRunView({
       {pending !== null && <Turn role="user">{pending}</Turn>}
 
       {submitting && (
-        <div className="flex flex-col gap-3 pl-10">
+        <div className="flex flex-col gap-3">
           <AiWorking
             label={stopping ? '正在停止這次呼叫' : 'AI 正在讀你的回答'}
             detail={stopping ? '收掉 CLI 那邊還在跑的呼叫' : '檢查是否切題並記下想法碎片'}
@@ -203,52 +209,64 @@ export function FrameworkRunView({
     // top and the input stays at the bottom, which is what keeps the question
     // being answered and the box answering it on screen together however long
     // the history gets.
-    <div className="flex h-[calc(100svh-3.5rem)] flex-col lg:h-svh">
+    <Screen>
       {/* No provider/model badge and no "發想中" kicker here: the rail already
           carries both, permanently, and repeating them put two labels above the
           one thing this header is for — which method is being run, and how far
           through it we are. */}
-      <div className="shrink-0 border-b border-border bg-background/85 px-5 py-4 backdrop-blur-md sm:px-8">
-        <Section className="mx-auto w-full max-w-4xl gap-3">
-          <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-2">
-            <Heading className="text-2xl sm:text-3xl">{labelOf(run.method_name)}</Heading>
-            {totalSteps > 1 &&
-              (finished ? (
-                <Small data-numeric className="flex items-center gap-1.5 text-xs text-success">
-                  <CircleCheckIcon className="size-3.5" aria-hidden />
-                  {totalSteps} 步全部跑完
-                </Small>
-              ) : (
-                <Small data-numeric className="text-xs">
-                  第 {Math.min(run.current_step_index + 1, totalSteps)} / {totalSteps} 步
-                </Small>
-              ))}
+      <ScreenHeader
+        title={labelOf(run.method_name)}
+        description={method?.description}
+        actions={
+          tutorial && (
+            <button
+              type="button"
+              aria-expanded={showTutorial}
+              onClick={() => setShowTutorial((open) => !open)}
+              className="group flex items-center gap-1.5 rounded-md text-xs font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none"
+            >
+              怎麼玩？
+              {/* The chevron stays because it does something — it says this
+                  opens. A question mark beside the words 怎麼玩 would only have
+                  said them again. */}
+              <ChevronDownIcon
+                className={cn(
+                  'size-3.5 transition-transform duration-200',
+                  showTutorial && 'rotate-180',
+                )}
+                aria-hidden
+              />
+            </button>
+          )
+        }
+        meta={
+          totalSteps > 1 &&
+          (finished ? (
+            <Small data-numeric className="flex items-center gap-1.5 text-xs text-success">
+              <CircleCheckIcon className="size-3.5" aria-hidden />
+              {totalSteps} 步全部跑完
+            </Small>
+          ) : (
+            <Small data-numeric className="text-xs">
+              第 {Math.min(run.current_step_index + 1, totalSteps)} / {totalSteps} 步
+            </Small>
+          ))
+        }
+      >
+        {/* Opened on demand, and the only thing here that changes the header's
+            height — which is the user's own doing. Plain state rather than a
+            Collapsible because the trigger sits up in the title row and the
+            panel belongs down here, on the full column. */}
+        {tutorial && showTutorial && (
+          <div className="animate-in fade-in slide-in-from-top-1 flex flex-col gap-2 rounded-xl border border-border bg-muted/60 p-3.5 duration-200">
+            <Small className="text-foreground/80">{tutorial.intro}</Small>
+            <Small>
+              <span className="font-medium text-foreground">怎麼玩：</span>
+              {tutorial.how_to}
+            </Small>
           </div>
-
-          {/* Progress as a segmented bar rather than a number: at a glance it
-              answers "how much of this is left", which is the question a
-              time-boxed method raises on every step. */}
-          {totalSteps > 1 && <ProgressTrack run={run} totalSteps={totalSteps} />}
-
-          {tutorial && (
-            <Collapsible>
-              <CollapsibleTrigger className="group flex items-center gap-1.5 rounded-md text-xs font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none">
-                <CircleHelpIcon className="size-3.5" aria-hidden />
-                這個方法是什麼？怎麼玩？
-              </CollapsibleTrigger>
-              <CollapsibleContent className="data-[state=closed]:animate-collapsible-up data-[state=open]:animate-collapsible-down overflow-hidden">
-                <div className="mt-2.5 flex flex-col gap-2 rounded-xl border border-border bg-muted/60 p-3.5">
-                  <Small className="text-foreground/80">{tutorial.intro}</Small>
-                  <Small>
-                    <span className="font-medium text-foreground">怎麼玩：</span>
-                    {tutorial.how_to}
-                  </Small>
-                </div>
-              </CollapsibleContent>
-            </Collapsible>
-          )}
-        </Section>
-      </div>
+        )}
+      </ScreenHeader>
 
       {centered ? (
         // Nothing has been said yet, so there is no transcript for the box to
@@ -379,30 +397,7 @@ export function FrameworkRunView({
           )}
         </>
       )}
-    </div>
-  )
-}
-
-/** The segmented progress bar. A finished run fills every segment: the run
- * stops on its last step rather than advancing past it, so keying the fill off
- * `current_step_index` alone left the final segment half-lit forever on a run
- * that had actually completed. */
-function ProgressTrack({ run, totalSteps }: { run: MethodRun; totalSteps: number }) {
-  const done = run.status === 'done' ? totalSteps : run.current_step_index
-  const inProgress = run.status === 'running' ? run.current_step_index : -1
-
-  return (
-    <div className="flex gap-1" aria-hidden>
-      {Array.from({ length: totalSteps }, (_, i) => (
-        <span
-          key={i}
-          className={cn(
-            'h-1 flex-1 rounded-full transition-colors duration-300',
-            i < done ? 'bg-primary' : i === inProgress ? 'bg-primary/40' : 'bg-border',
-          )}
-        />
-      ))}
-    </div>
+    </Screen>
   )
 }
 
@@ -421,7 +416,7 @@ function AgentStep({ step }: { step: MethodStep }) {
   const fragments = output.idea_fragments ?? []
 
   return (
-    <div className="flex flex-col gap-2 pl-10">
+    <div className="flex flex-col gap-2">
       {output.analysis && (
         <Turn role="ai" markdown>
           {output.analysis}
@@ -531,7 +526,10 @@ function AnswerForm({
         onSubmit={onSubmit}
         submitOn="shift-enter"
         isLoading={submitting}
-        disabled={timeUp || submitting}
+        // Only the timer greys the whole well out. While a call is in flight
+        // the box dims but the stop button inside it must not — a stop that
+        // looks disabled is a stop nobody presses.
+        disabled={timeUp}
         maxHeight={320}
         className={cn(
           'rounded-2xl border-input bg-surface p-2 shadow-sm transition-[border-color,box-shadow] duration-150',
@@ -542,6 +540,7 @@ function AnswerForm({
         <PromptInputTextarea
           placeholder="輸入你的回答…"
           autoFocus
+          disabled={timeUp || submitting}
           className="bg-transparent px-2 py-1.5 text-base text-foreground shadow-none placeholder:text-muted-foreground dark:bg-transparent"
         />
         <PromptInputActions className="justify-between pt-1 pl-2">
@@ -576,7 +575,7 @@ function AnswerForm({
                   type="button"
                   size="icon"
                   variant="outline"
-                  className="rounded-xl"
+                  className="rounded-full"
                   aria-label="停止"
                   disabled={stopping}
                   onClick={onStop}
@@ -589,7 +588,7 @@ function AnswerForm({
                 <Button
                   type="button"
                   size="icon"
-                  className="rounded-xl"
+                  className="rounded-full"
                   aria-label="送出"
                   disabled={!canSend}
                   onClick={onSubmit}

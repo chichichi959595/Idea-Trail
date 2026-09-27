@@ -103,16 +103,19 @@ export function Notice({
  * space waiting to be filled rather than as a failure to load.
  */
 export function EmptyState({
-  icon: Icon = SparklesIcon,
+  icon: Icon,
   eyebrow,
   title,
   description,
   action,
   className,
 }: {
+  /** Omit it for a state that is only a sentence. A glyph that adds nothing to
+   * the sentence under it is decoration, and decoration in an empty state is
+   * the one thing the user is left staring at. */
   icon?: LucideIcon
   eyebrow?: ReactNode
-  title: ReactNode
+  title?: ReactNode
   description?: ReactNode
   action?: ReactNode
   className?: string
@@ -120,16 +123,18 @@ export function EmptyState({
   return (
     <div
       className={cn(
-        'bg-grid relative flex flex-col items-center gap-3 rounded-2xl border border-dashed border-border px-6 py-14 text-center',
+        'bg-grid relative flex flex-col items-center gap-3 rounded-2xl border border-dashed border-border px-6 py-12 text-center',
         className,
       )}
     >
-      <div className="flex size-11 items-center justify-center rounded-xl border border-border bg-surface text-muted-foreground shadow-xs">
-        <Icon className="size-5" aria-hidden />
-      </div>
+      {Icon && (
+        <div className="flex size-11 items-center justify-center rounded-xl border border-border bg-surface text-muted-foreground shadow-xs">
+          <Icon className="size-5" aria-hidden />
+        </div>
+      )}
       {eyebrow && <Eyebrow>{eyebrow}</Eyebrow>}
-      <Heading className="text-base sm:text-lg">{title}</Heading>
-      {description && <Small className="max-w-sm">{description}</Small>}
+      {title && <Heading className="text-base sm:text-lg">{title}</Heading>}
+      {description && <Small className="max-w-md text-pretty">{description}</Small>}
       {action && <div className="mt-2 flex items-center gap-2">{action}</div>}
     </div>
   )

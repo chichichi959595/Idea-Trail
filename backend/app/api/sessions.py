@@ -68,6 +68,30 @@ def create_session(payload: CreateSessionRequest, db: DbSession = Depends(get_db
     return session_to_dict(session)
 
 
+@router.put("/{session_id}")
+def replace_session_intake(
+    session_id: int, payload: CreateSessionRequest, db: DbSession = Depends(get_db)
+):
+    """Overwrite a session's intake answers.
+
+    The team's answers used to be collected once, on a screen the user could
+    never get back to. They now live on the setup screen alongside the provider
+    and the method, so they can be corrected after the fact — and every later
+    call (the recommendation, each step, the convergence) reads them from this
+    row, which means the row has to be able to follow the form.
+
+    A full replace rather than a patch: the form always holds the whole intake,
+    and clearing a field has to be able to clear it here too.
+    """
+    session = db.get(IdeationSession, session_id)
+    if session is None:
+        raise HTTPException(404, "session not found")
+    for field, value in payload.model_dump().items():
+        setattr(session, field, value)
+    db.commit()
+    return session_to_dict(session)
+
+
 @router.get("/{session_id}")
 def get_session(session_id: int, db: DbSession = Depends(get_db)):
     session = db.get(IdeationSession, session_id)

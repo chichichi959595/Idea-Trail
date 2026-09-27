@@ -8,7 +8,7 @@ import type {
   Session,
 } from './types'
 
-const BASE_URL = 'http://127.0.0.1:8011'
+const BASE_URL = 'http://127.0.0.1:8000'
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE_URL}${path}`, {
@@ -125,6 +125,12 @@ export const api = {
     request<Session>('/sessions', { method: 'POST', body: JSON.stringify(payload) }),
 
   getSession: (id: number) => request<Session>(`/sessions/${id}`),
+
+  /** Rewrites a session's intake answers. The setup screen can be returned to
+   * and corrected, and every later call reads the stored row — so the row has
+   * to be able to follow the form. */
+  updateSession: (id: number, payload: Partial<Session>) =>
+    request<Session>(`/sessions/${id}`, { method: 'PUT', body: JSON.stringify(payload) }),
 
   recommendMethods: (
     sessionId: number,

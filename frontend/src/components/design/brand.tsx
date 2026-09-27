@@ -46,18 +46,3 @@ export function BrandLockup({ compact = false }: { compact?: boolean }) {
     </div>
   )
 }
-
-/**
- * Name beside role, for the entry screen — one line above a display heading,
- * where a stacked lockup would compete with it for the same vertical rhythm.
- */
-export function Wordmark({ className }: { className?: string }) {
-  return (
-    <div className={cn('flex items-center gap-2.5', className)}>
-      <BrandMark className="size-8 gap-[3.5px] p-[5.5px] rounded-[11px]" />
-      <span className="text-lg font-semibold tracking-tight">{PRODUCT_NAME}</span>
-      <span aria-hidden className="h-4 w-px bg-border-strong" />
-      <span className="text-sm text-muted-foreground">{PRODUCT_TAGLINE}</span>
-    </div>
-  )
-}
