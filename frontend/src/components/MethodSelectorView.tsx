@@ -1,14 +1,35 @@
 import { useState } from 'react'
+import { ArrowRightIcon, ChevronDownIcon, GaugeIcon, WandSparklesIcon } from 'lucide-react'
 import {
   PROVIDER_IDS,
   PROVIDER_LABELS,
   PROVIDER_TAGLINES,
+  PROVIDER_UNAVAILABLE_HINTS,
   type MethodRecommendation,
   type ProviderId,
   type ProvidersHealth,
 } from '../types'
 import { useMethodCatalog } from '../useMethodCatalog'
-import { Body, Button, Headline, Meta, Panel, SectionLabel, Subhead, Support, Tag, ThinkingIndicator } from './ui'
+import { cn } from '@/lib/utils'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '@/components/ui/collapsible'
+import { Selectable } from '@/components/design/selectable'
+import { Page, Section, SectionHeader, StickyFooter } from '@/components/design/section'
+import { Eyebrow, Small, Subhead } from '@/components/design/typography'
+import { ErrorState, Notice, RowSkeleton } from '@/components/design/states'
+import { AiMarkdown, AiReasoning, AiWorking } from '@/components/design/ai'
 
 interface Props {
   recommendations: MethodRecommendation[]
@@ -17,11 +38,20 @@ interface Props {
   providersHealth: ProvidersHealth | undefined
   provider: string
   model: string
-  onProviderChange: (p: string, model: string) => void
+  stepModel: string
+  onProviderChange: (p: string, model: string, stepModel: string) => void
   recommending: boolean
+  thinking: string
   recommendError: string | null
   onStart: (method: string) => void
   starting: boolean
+}
+
+type Role = 'deep' | 'step'
+
+const ROLE_LABELS: Record<Role, string> = {
+  deep: '收斂／推薦',
+  step: '引導步驟',
 }
 
 export function MethodSelectorView({
@@ -31,34 +61,44 @@ export function MethodSelectorView({
   providersHealth,
   provider,
   model,
+  stepModel,
   onProviderChange,
   recommending,
+  thinking,
   recommendError,
   onStart,
   starting,
 }: Props) {
   const { methods: allMethods, get, labelOf } = useMethodCatalog()
   const [selectedMethod, setSelectedMethod] = useState<string | null>(null)
-  // Each provider remembers its own model pick, so switching back and forth
-  // doesn't silently reset the other one to its default.
-  const [modelByProvider, setModelByProvider] = useState<Record<string, string>>({})
+  // Each provider remembers its own model picks, so switching back and forth
+  // doesn't silently reset the other one to its defaults. Two roles per
+  // provider: 'deep' drives method selection and convergence, 'step' drives
+  // the per-step agents.
+  const [picks, setPicks] = useState<Record<string, Partial<Record<Role, string>>>>({})
 
-  function modelFor(p: ProviderId) {
+  function modelFor(p: ProviderId, role: Role) {
     const health = providersHealth?.[p]
-    return modelByProvider[p] ?? health?.default_model ?? health?.models?.[0]?.id ?? ''
+    const fallback =
+      role === 'deep'
+        ? (health?.default_model ?? health?.models?.[0]?.id)
+        : (health?.default_step_model ?? health?.default_model ?? health?.models?.[0]?.id)
+    return picks[p]?.[role] ?? fallback ?? ''
   }
 
   function selectProvider(p: ProviderId) {
     if (providersHealth?.[p]?.ok === false || recommending) return
-    onProviderChange(p, modelFor(p))
+    onProviderChange(p, modelFor(p, 'deep'), modelFor(p, 'step'))
   }
 
-  function changeModel(p: ProviderId, nextModel: string) {
-    setModelByProvider((prev) => ({ ...prev, [p]: nextModel }))
-    // Picking a model on the active provider re-runs the recommendation with
-    // it; on the other card it's just a stored preference until that card is
-    // chosen, so an idle dropdown never burns an LLM call.
-    if (p === provider && !recommending) onProviderChange(p, nextModel)
+  function changeModel(p: ProviderId, role: Role, nextModel: string) {
+    setPicks((prev) => ({ ...prev, [p]: { ...prev[p], [role]: nextModel } }))
+    if (p !== provider || recommending) return
+    // The deep model drives the method-selection call, so changing it on the
+    // active provider re-runs that call. The step model doesn't feed it, so
+    // that pick just waits until a run starts. On an idle card neither one
+    // burns an LLM call.
+    if (role === 'deep') onProviderChange(p, nextModel, modelFor(p, 'step'))
   }
 
   function select(method: string) {
@@ -66,224 +106,323 @@ export function MethodSelectorView({
     setSelectedMethod(method)
   }
 
+  function labelForModel(id: string) {
+    return providersHealth?.[provider as ProviderId]?.models?.find((m) => m.id === id)?.label ?? id
+  }
+  // Both picks in the footer summary, and collapsed to one when they're the
+  // same model — repeating an identical name twice reads like a bug.
   const activeModelLabel =
-    providersHealth?.[provider as ProviderId]?.models?.find((m) => m.id === model)?.label ?? model
+    stepModel && stepModel !== model
+      ? `${labelForModel(model)} / 步驟 ${labelForModel(stepModel)}`
+      : labelForModel(model)
 
   return (
-    <Panel className="mt-8">
-      <SectionLabel number="02">Method</SectionLabel>
-      <Headline className="mb-2">Method Selector 推薦</Headline>
-      <Body className="mb-8 text-foreground/70">
-        AI 會讀完你們填的內容，從 10 種發想方法裡挑出最適合的 3 個並排序。系統另外用規則排了一份參考順序給它，但最終選擇由 AI 決定。選一個方法，按下方「確定」開始發想。
-      </Body>
+    <Page>
+      <div className="flex flex-col gap-10">
+        <Section>
+          <SectionHeader
+            eyebrow="01"
+            title="選一個額度來源"
+            description="挑好之後 AI 會立刻讀你們填的內容，從 10 種發想方法裡排出最適合的 3 個。"
+          />
 
-      <div className="mb-10 border-y-2 border-foreground/15 py-6">
-        <Meta className="text-foreground mb-4 block">LLM 額度來源</Meta>
-        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-          {PROVIDER_IDS.map((p) => {
-            const health = providersHealth?.[p]
-            const unavailable = health?.ok === false
-            const models = health?.models ?? []
-            const selected = provider === p
-            const currentModel = modelFor(p)
-            const currentDescription = models.find((m) => m.id === currentModel)?.description
-            return (
-              <div
-                key={p}
-                role="button"
-                tabIndex={unavailable ? -1 : 0}
-                aria-pressed={selected}
-                aria-disabled={unavailable || recommending}
-                onClick={() => selectProvider(p)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' || e.key === ' ') {
-                    e.preventDefault()
-                    selectProvider(p)
-                  }
-                }}
-                className={`flex min-h-28 flex-col gap-3 border-2 p-4 text-left transition-colors duration-150 ${
-                  unavailable
-                    ? 'border-foreground/30 cursor-not-allowed opacity-40'
-                    : selected
-                      ? 'border-accent bg-accent/5 cursor-pointer'
-                      : 'border-foreground hover:bg-muted cursor-pointer'
-                }`}
-              >
-                {/* One header row across both cards: name on the left, model
-                    picker on the right, sharing a single baseline. The select
-                    sets the row's height, so every card lines up with the
-                    other no matter how long its description runs. */}
-                <div className="flex items-center justify-between gap-3">
-                  <div className="flex min-w-0 items-center gap-3">
-                    <span
-                      className={`h-4 w-4 shrink-0 border-2 ${
-                        selected ? 'bg-accent border-accent' : 'border-foreground/40'
-                      }`}
-                      aria-hidden
-                    />
-                    <Subhead className="truncate">{PROVIDER_LABELS[p]}</Subhead>
-                    {unavailable && <Tag>無法使用</Tag>}
+          <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
+            {PROVIDER_IDS.map((p) => {
+              const health = providersHealth?.[p]
+              const unavailable = health?.ok === false
+              const models = health?.models ?? []
+              const selected = provider === p
+              const deepModel = modelFor(p, 'deep')
+              const stepModelFor = modelFor(p, 'step')
+              const currentDescription = models.find((m) => m.id === deepModel)?.description
+              // The CLI routes borrow a subscription but pay for it in latency —
+              // say so on the card rather than letting the user discover it by
+              // waiting through a run.
+              const slow = health?.speed_tier === 'slow'
+
+              return (
+                <Selectable
+                  key={p}
+                  // The card contains its own `<select>` controls, which a
+                  // `<button>` may not — so it renders as a div that handles
+                  // keyboard selection itself.
+                  asDiv
+                  selected={selected}
+                  disabled={unavailable || recommending}
+                  onSelect={() => selectProvider(p)}
+                  className="gap-3 pr-11"
+                >
+                  <div className="flex min-w-0 flex-col gap-1">
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <Subhead className="truncate">{PROVIDER_LABELS[p]}</Subhead>
+                      {unavailable && <Badge variant="soft">無法使用</Badge>}
+                      {!unavailable && slow && (
+                        <Badge variant="warning">
+                          <GaugeIcon aria-hidden />
+                          較慢
+                        </Badge>
+                      )}
+                    </div>
+                    {/* Clamped to a fixed two lines. These three cards are read
+                        as a row, and an unavailable provider's longer hint used
+                        to push its model pickers a line lower than the other
+                        two, so the grid stopped scanning as a comparison. */}
+                    <Small className="line-clamp-2 min-h-9 text-xs">
+                      {unavailable ? PROVIDER_UNAVAILABLE_HINTS[p] : PROVIDER_TAGLINES[p]}
+                    </Small>
                   </div>
 
-                  {/* Clicks here must not bubble up to the card, or opening
-                      the dropdown on the inactive provider would switch
-                      provider and fire an LLM call. */}
-                  <label
-                    className="flex shrink-0 items-center gap-2"
+                  {/* Two model picks, not one. The step agents only judge whether
+                      an answer is on topic and jot a fragment or two, and they
+                      run once per step; convergence is what the team walks away
+                      with. Clicks must not bubble up to the card, or opening a
+                      dropdown on an idle provider would switch provider and fire
+                      an LLM call. */}
+                  <div
+                    className="flex flex-col gap-1.5"
                     onClick={(e) => e.stopPropagation()}
                     onKeyDown={(e) => e.stopPropagation()}
                   >
-                    <Meta>模型</Meta>
-                    <select
-                      value={currentModel}
-                      disabled={unavailable || models.length === 0 || recommending}
-                      onChange={(e) => changeModel(p, e.target.value)}
-                      className="border-foreground bg-background focus:border-accent h-11 max-w-36 border-2 px-2 text-xs font-bold disabled:cursor-not-allowed disabled:opacity-40 focus:outline-none"
-                    >
-                      {models.length === 0 && <option value="">（讀不到清單）</option>}
-                      {models.map((m) => (
-                        <option key={m.id} value={m.id}>
-                          {m.label}
-                        </option>
-                      ))}
-                    </select>
-                  </label>
-                </div>
+                    {(
+                      [
+                        ['deep', deepModel],
+                        ['step', stepModelFor],
+                      ] as const
+                    ).map(([role, value]) => (
+                      <div key={role} className="flex items-center gap-2">
+                        <Eyebrow className="w-16 shrink-0">{ROLE_LABELS[role]}</Eyebrow>
+                        <Select
+                          value={value || undefined}
+                          disabled={unavailable || models.length === 0 || recommending}
+                          onValueChange={(next) => changeModel(p, role, next)}
+                        >
+                          <SelectTrigger size="sm" className="min-w-0 flex-1 text-xs">
+                            <SelectValue placeholder="（讀不到清單）" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            {models.map((m) => (
+                              <SelectItem key={m.id} value={m.id}>
+                                {m.label}
+                              </SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                    ))}
+                  </div>
 
-                {/* Indented past the checkbox so the body text starts on the
-                    same left edge as the provider name. */}
-                <div className="ml-7 flex flex-col gap-1">
-                  <Support className="text-foreground/70">
-                    {unavailable ? '這台機器沒有登入，先在終端機登入後重新整理。' : PROVIDER_TAGLINES[p]}
-                  </Support>
-                  {currentDescription && (
-                    <Support className="text-foreground/50 line-clamp-2">{currentDescription}</Support>
+                  {(currentDescription || (!unavailable && slow && health?.speed_note)) && (
+                    <div className="flex flex-col gap-1 border-t border-border pt-2.5">
+                      {currentDescription && (
+                        <Small className="line-clamp-2 text-xs">{currentDescription}</Small>
+                      )}
+                      {!unavailable && slow && health?.speed_note && (
+                        <Small className="flex gap-1.5 text-xs">
+                          <GaugeIcon className="mt-0.5 size-3 shrink-0 text-warning" aria-hidden />
+                          <span className="line-clamp-3">{health.speed_note}</span>
+                        </Small>
+                      )}
+                    </div>
                   )}
-                </div>
-              </div>
-            )
-          })}
-        </div>
-        {recommending && (
-          <div className="mt-4">
-            <ThinkingIndicator label="AI 正在判斷該用哪些方法…" />
+                </Selectable>
+              )
+            })}
           </div>
-        )}
-      </div>
+        </Section>
 
-      {!provider && (
-        <Body className="mb-10 text-foreground/60">
-          先選一個上面的方塊（順便挑要用哪個模型），AI 才會開始判斷該推薦哪些發想方法。
-        </Body>
-      )}
+        <Section>
+          <SectionHeader
+            eyebrow="02"
+            title="選一個發想方法"
+            description="系統先用規則排了一份參考順序，最終的排名與理由由 AI 決定。"
+          />
 
-      {recommendError && (
-        <p className="mb-10 border-2 border-accent bg-accent/5 px-4 py-3 text-sm font-bold text-accent">
-          {recommendError}
-        </p>
-      )}
-
-      {provider && !recommending && adjustmentNote && (
-        <div className="bg-muted border-foreground/10 mb-10 border-l-2 p-4">
-          <Meta className="text-foreground mb-2 block">AI 怎麼選的</Meta>
-          <Support className="text-foreground/80">{adjustmentNote}</Support>
-          {ruleRanking.length > 0 && (
-            <Support className="text-foreground/50 mt-3 block">
-              規則的參考順序：{ruleRanking.map(labelOf).join(' → ')}
-            </Support>
+          {!provider && !recommending && (
+            <Notice tone="brand" icon={WandSparklesIcon} title="還沒選額度來源">
+              先挑上面一張卡片（順便選要用哪個模型），AI 才會開始判斷該推薦哪些發想方法。
+            </Notice>
           )}
-        </div>
-      )}
 
-      {provider && !recommending && (
-        <ol className="flex flex-col">
-          {recommendations.map((r) => {
-            const selected = selectedMethod === r.method
-            return (
-              <li key={r.id} className="border-t-2 border-foreground/15 py-6 first:border-t-0">
-                <div
-                  role="button"
-                  tabIndex={0}
-                  aria-pressed={selected}
-                  onClick={() => select(r.method)}
-                  onKeyDown={(e) => {
-                    if (e.key === 'Enter' || e.key === ' ') {
-                      e.preventDefault()
-                      select(r.method)
-                    }
-                  }}
-                  className="-mx-4 flex cursor-pointer items-center gap-4 px-4 py-2"
-                >
-                  <span
-                    className={`h-4 w-4 shrink-0 border-2 ${selected ? 'bg-accent border-accent' : 'border-foreground/40'}`}
-                    aria-hidden
+          {recommending && (
+            <div className="flex flex-col gap-4">
+              <AiWorking label="AI 正在判斷該用哪些方法" detail="讀取團隊條件並排序 10 種方法" />
+              {/* The reasoning is the wait made legible — prompt-kit's Reasoning
+                  block, auto-open while the tokens are still arriving. */}
+              <AiReasoning text={thinking} streaming />
+              <div className="flex flex-col gap-2">
+                {[0, 1, 2].map((i) => (
+                  <RowSkeleton key={i} />
+                ))}
+              </div>
+            </div>
+          )}
+
+          {recommendError && !recommending && (
+            <ErrorState title="AI 推薦方法失敗" detail={recommendError} />
+          )}
+
+          {provider && !recommending && adjustmentNote && (
+            <AiReasoning
+              label="AI 怎麼選的"
+              text={
+                ruleRanking.length > 0
+                  ? `${adjustmentNote}\n\n**規則的參考順序：** ${ruleRanking.map(labelOf).join(' → ')}`
+                  : adjustmentNote
+              }
+            />
+          )}
+
+          {provider && !recommending && recommendations.length > 0 && (
+            <ol className="flex flex-col gap-2.5">
+              {recommendations.map((r) => (
+                <li key={r.id}>
+                  <RecommendationRow
+                    rank={r.rank}
+                    label={labelOf(r.method)}
+                    description={get(r.method)?.description}
+                    rationale={r.rationale}
+                    swappedIn={ruleRanking.length > 0 && !ruleRanking.includes(r.method)}
+                    selected={selectedMethod === r.method}
+                    onSelect={() => select(r.method)}
                   />
-                  <span className="text-accent w-10 shrink-0 text-3xl font-black leading-none">
-                    {String(r.rank).padStart(2, '0')}
-                  </span>
-                  <Subhead className="flex-1">{labelOf(r.method)}</Subhead>
-                  {ruleRanking.length > 0 && !ruleRanking.includes(r.method) && <Tag>AI 換上</Tag>}
-                </div>
+                </li>
+              ))}
+            </ol>
+          )}
 
-                <div className="ml-[4.5rem]">
-                  <Body className="mt-3 text-foreground/80">{get(r.method)?.description}</Body>
-                  <details className="mt-2">
-                    <summary className="cursor-pointer text-xs font-bold uppercase tracking-widest text-foreground/50">
-                      更多…
-                    </summary>
-                    <Support className="mt-2 text-foreground/70">{r.rationale}</Support>
-                  </details>
-                </div>
-              </li>
-            )
-          })}
-
-
-          <li className="border-t-2 border-foreground/15 py-6">
-            <details>
-              <summary className="cursor-pointer text-xs font-bold uppercase tracking-widest text-foreground/60">
+          {provider && !recommending && (
+            <Collapsible className="rounded-xl border border-border bg-surface">
+              <CollapsibleTrigger className="group flex w-full items-center justify-between gap-2 px-4 py-3 text-left text-sm font-medium transition-colors hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none">
                 手動選擇其他方法
-              </summary>
-              <div className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2">
-                {allMethods.map((m) => {
-                  const selected = selectedMethod === m.name
-                  return (
-                    <button
+                <ChevronDownIcon className="size-4 text-muted-foreground transition-transform duration-200 group-data-[state=open]:rotate-180" />
+              </CollapsibleTrigger>
+              <CollapsibleContent className="data-[state=closed]:animate-collapsible-up data-[state=open]:animate-collapsible-down overflow-hidden">
+                <div className="grid grid-cols-1 gap-2.5 border-t border-border p-4 sm:grid-cols-2">
+                  {allMethods.map((m) => (
+                    <Selectable
                       key={m.name}
-                      type="button"
+                      selected={selectedMethod === m.name}
                       disabled={starting}
-                      onClick={() => select(m.name)}
-                      className={`flex min-h-28 flex-col gap-2 border-2 p-4 text-left transition-colors duration-150 disabled:cursor-not-allowed disabled:opacity-40 ${
-                        selected ? 'border-accent bg-accent/5' : 'border-foreground hover:bg-muted'
-                      }`}
+                      onSelect={() => select(m.name)}
+                      className="gap-1.5 pr-11"
                     >
                       <Subhead>{m.label}</Subhead>
-                      <Support className="text-foreground/70 line-clamp-2">{m.description}</Support>
-                    </button>
-                  )
-                })}
-              </div>
-            </details>
-          </li>
-        </ol>
-      )}
+                      <Small className="line-clamp-2 text-xs">{m.description}</Small>
+                    </Selectable>
+                  ))}
+                </div>
+              </CollapsibleContent>
+            </Collapsible>
+          )}
+        </Section>
+      </div>
 
-      <div className="border-foreground mt-4 flex flex-wrap items-center justify-between gap-4 border-t-4 pt-6">
-        <Meta className="text-foreground">
-          {selectedMethod ? `已選擇：${labelOf(selectedMethod)}` : '尚未選擇方法'}
-          {provider &&
-            ` · ${PROVIDER_LABELS[provider as ProviderId] ?? provider}${
-              activeModelLabel ? ` / ${activeModelLabel}` : ''
-            }`}
-        </Meta>
+      <StickyFooter>
+        <Small className="min-w-0 text-xs">
+          {selectedMethod ? (
+            <>
+              已選擇 <span className="font-medium text-foreground">{labelOf(selectedMethod)}</span>
+            </>
+          ) : (
+            '尚未選擇方法'
+          )}
+          {provider && (
+            <>
+              {' · '}
+              {PROVIDER_LABELS[provider as ProviderId] ?? provider}
+              {activeModelLabel && ` / ${activeModelLabel}`}
+            </>
+          )}
+        </Small>
         {starting ? (
-          <ThinkingIndicator />
+          <AiWorking label="正在開場" detail="準備第一個引導問題" />
         ) : (
-          <Button disabled={!selectedMethod} onClick={() => selectedMethod && onStart(selectedMethod)}>
-            確定，開始發想
+          <Button
+            size="lg"
+            disabled={!selectedMethod}
+            onClick={() => selectedMethod && onStart(selectedMethod)}
+          >
+            開始發想
+            <ArrowRightIcon />
           </Button>
         )}
-      </div>
-    </Panel>
+      </StickyFooter>
+    </Page>
+  )
+}
+
+/**
+ * One recommended method. The rank is the visual anchor — a large tabular
+ * numeral in its own well — because "which of these three" is the only decision
+ * this row supports. The rationale stays folded, since it is the model's
+ * argument for a choice the user has usually already made on the name alone.
+ */
+function RecommendationRow({
+  rank,
+  label,
+  description,
+  rationale,
+  swappedIn,
+  selected,
+  onSelect,
+}: {
+  rank: number
+  label: string
+  description?: string
+  rationale: string
+  swappedIn: boolean
+  selected: boolean
+  onSelect: () => void
+}) {
+  return (
+    <div
+      className={cn(
+        'rounded-xl border transition-[border-color,background-color,box-shadow] duration-150',
+        selected
+          ? 'border-primary/45 bg-brand-muted shadow-sm'
+          : 'border-border bg-surface shadow-xs',
+      )}
+    >
+      <button
+        type="button"
+        aria-pressed={selected}
+        onClick={onSelect}
+        className="flex w-full items-start gap-4 rounded-xl p-4 text-left focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none"
+      >
+        <span
+          data-numeric
+          aria-hidden
+          className={cn(
+            'flex size-9 shrink-0 items-center justify-center rounded-lg border text-base font-semibold',
+            selected
+              ? 'border-primary bg-primary text-primary-foreground'
+              : 'border-border bg-muted text-muted-foreground',
+          )}
+        >
+          {rank}
+        </span>
+        <span className="flex min-w-0 flex-1 flex-col gap-1">
+          <span className="flex flex-wrap items-center gap-1.5">
+            <Subhead>{label}</Subhead>
+            {swappedIn && <Badge variant="ai">AI 換上</Badge>}
+          </span>
+          {description && <Small className="text-pretty">{description}</Small>}
+        </span>
+      </button>
+
+      {rationale && (
+        <div className="px-4 pb-3.5 pl-[4.25rem]">
+          <Collapsible>
+            <CollapsibleTrigger className="group flex items-center gap-1 rounded-md text-xs font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none">
+              為什麼推薦這個
+              <ChevronDownIcon className="size-3.5 transition-transform duration-200 group-data-[state=open]:rotate-180" />
+            </CollapsibleTrigger>
+            <CollapsibleContent className="data-[state=closed]:animate-collapsible-up data-[state=open]:animate-collapsible-down overflow-hidden">
+              <AiMarkdown className="mt-2 text-sm text-muted-foreground">{rationale}</AiMarkdown>
+            </CollapsibleContent>
+          </Collapsible>
+        </div>
+      )}
+    </div>
   )
 }

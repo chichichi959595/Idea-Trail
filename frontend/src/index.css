@@ -1,88 +1,650 @@
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700;900&display=swap');
-@import "tailwindcss";
+@import url('https://fonts.googleapis.com/css2?family=Inter:ital,opsz,wght@0,14..32,100..900;1,14..32,100..900&family=JetBrains+Mono:wght@400;500&display=swap');
+@import 'tailwindcss';
+@import 'tw-animate-css';
 
-@theme {
-  --color-background: #ffffff;
-  --color-foreground: #000000;
-  --color-muted: #f2f2f2;
-  --color-accent: #ff3000;
+@custom-variant dark (&:is(.dark *));
 
-  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+/* ==========================================================================
+   DESIGN TOKENS
+   --------------------------------------------------------------------------
+   One source of truth for the whole app. Components never hard-code a colour,
+   a radius or a shadow — they reference a token, so retheming happens here and
+   nowhere else.
+
+   Colour is oklch throughout: perceptually uniform, so a lightness step reads
+   as the same size step at every hue, which is what keeps the neutral ramp
+   from going muddy in the midtones.
+
+   Naming follows shadcn/ui so that both shadcn primitives and prompt-kit
+   components drop in unedited, plus a few tokens this product needs of its
+   own (`surface`, `brand`, `ai`, `warning`, `success`).
+   ========================================================================== */
+
+:root {
+  /* --- Radius -------------------------------------------------------------
+     One base value; everything else derives from it. Generous but not pill-
+     shaped — 10px is the point where a card reads "soft" without reading
+     "toy". Inputs and buttons sit one notch tighter than cards. */
+  --radius: 0.625rem;
+
+  /* --- Neutral ramp -------------------------------------------------------
+     Cool grey: a trace of chroma at hue 265 so large light surfaces read as
+     deliberately cool rather than as a printer's off-white. */
+  --background: oklch(0.994 0.001 265);
+  --foreground: oklch(0.21 0.014 265);
+
+  /* A panel raised off the page. Deliberately only ~1.5% darker than the
+     page: the separation comes from the border and shadow, not from a value
+     jump, which is what stops the UI looking like stacked grey boxes. */
+  --surface: oklch(1 0 0);
+  --surface-foreground: var(--foreground);
+
+  --card: oklch(1 0 0);
+  --card-foreground: var(--foreground);
+  --popover: oklch(1 0 0);
+  --popover-foreground: var(--foreground);
+
+  /* Quiet fills. `muted` is for blocks of secondary content; `subtle` is a
+     half-step quieter, for things nested inside an already-muted block. */
+  --muted: oklch(0.968 0.003 265);
+  --muted-foreground: oklch(0.525 0.014 265);
+  --subtle: oklch(0.982 0.002 265);
+
+  /* Hover/active fill for interactive rows and ghost buttons. */
+  --accent: oklch(0.958 0.004 265);
+  --accent-foreground: var(--foreground);
+
+  /* --- Brand --------------------------------------------------------------
+     A single indigo-violet carries every "this is the product acting" moment:
+     primary actions, selection, focus, AI state. Deep enough to hold white
+     text at AA, desaturated enough not to vibrate against the cool greys. */
+  --brand: oklch(0.53 0.183 277);
+  --brand-foreground: oklch(0.985 0.002 265);
+  --brand-muted: oklch(0.955 0.021 277);
+  --brand-border: oklch(0.885 0.048 277);
+
+  --primary: var(--brand);
+  --primary-foreground: var(--brand-foreground);
+
+  --secondary: oklch(0.968 0.003 265);
+  --secondary-foreground: oklch(0.29 0.014 265);
+
+  /* --- AI state -----------------------------------------------------------
+     Reasoning, streaming, agent output. Shares the brand hue family but sits
+     a step warmer and lighter, so "the model is working" is legible as its own
+     channel without introducing a second brand colour. */
+  --ai: oklch(0.58 0.16 293);
+  --ai-foreground: oklch(0.985 0.002 265);
+  --ai-muted: oklch(0.966 0.018 293);
+  --ai-border: oklch(0.9 0.04 293);
+
+  /* --- Semantic status ----------------------------------------------------
+     Separated out because the old design used one accent for selection AND
+     errors, which made a failed call look identical to a chosen option. */
+  --destructive: oklch(0.575 0.208 26);
+  --destructive-foreground: oklch(0.985 0.002 265);
+  --destructive-muted: oklch(0.963 0.019 26);
+  --destructive-border: oklch(0.885 0.055 26);
+
+  --warning: oklch(0.65 0.155 58);
+  --warning-foreground: oklch(0.22 0.04 58);
+  --warning-muted: oklch(0.968 0.032 75);
+  --warning-border: oklch(0.878 0.075 70);
+
+  --success: oklch(0.575 0.13 155);
+  --success-foreground: oklch(0.985 0.002 265);
+  --success-muted: oklch(0.962 0.026 155);
+  --success-border: oklch(0.87 0.058 155);
+
+  /* --- Lines --------------------------------------------------------------
+     Hairlines, not rules. `border` is the default divider; `border-strong` is
+     for the one line in a panel that has to read as structural. */
+  --border: oklch(0.915 0.005 265);
+  --border-strong: oklch(0.855 0.008 265);
+  --input: oklch(0.9 0.006 265);
+  --ring: oklch(0.53 0.183 277 / 0.55);
+
+  /* --- Elevation ----------------------------------------------------------
+     Low-opacity, tightly stacked, cool-tinted. Shadows here separate layers;
+     they never simulate a physical object. */
+  --shadow-color: 265 25% 12%;
+  --elevation-xs: 0 1px 2px 0 hsl(var(--shadow-color) / 0.04);
+  --elevation-sm:
+    0 1px 2px -1px hsl(var(--shadow-color) / 0.06), 0 1px 3px 0 hsl(var(--shadow-color) / 0.05);
+  --elevation-md:
+    0 2px 4px -2px hsl(var(--shadow-color) / 0.06), 0 4px 10px -2px hsl(var(--shadow-color) / 0.07);
+  --elevation-lg:
+    0 4px 8px -3px hsl(var(--shadow-color) / 0.07), 0 12px 24px -4px hsl(var(--shadow-color) / 0.09);
+  --elevation-xl:
+    0 8px 16px -6px hsl(var(--shadow-color) / 0.08), 0 24px 48px -8px hsl(var(--shadow-color) / 0.12);
+  --elevation-ring: 0 0 0 1px hsl(var(--shadow-color) / 0.05);
+
+
+  /* Sidebar reads as chrome rather than content: it sits *behind* the page
+     plane, so it takes the one surface that is darker than the background. */
+  --sidebar: oklch(0.976 0.002 265);
+  --sidebar-foreground: var(--foreground);
+  --sidebar-border: oklch(0.912 0.005 265);
+  --sidebar-accent: oklch(0.945 0.005 265);
+  --sidebar-accent-foreground: var(--foreground);
+  --sidebar-primary: var(--brand);
+  --sidebar-primary-foreground: var(--brand-foreground);
+  --sidebar-ring: var(--ring);
 }
 
-/* ---- Swiss texture utilities ---- */
-/* Subtle 24px grid lines — structure made visible, never overpowering. */
-@utility swiss-grid-pattern {
+.dark {
+  /* Not an inversion — a separate palette. Pure black crushes the low-opacity
+     shadows the light theme relies on, so the darkest surface is a deep cool
+     charcoal and elevation climbs *lighter*, the way it does in every dark UI
+     that doesn't look flat. */
+  --background: oklch(0.176 0.012 265);
+  --foreground: oklch(0.945 0.004 265);
+
+  --surface: oklch(0.213 0.013 265);
+  --surface-foreground: var(--foreground);
+
+  --card: oklch(0.213 0.013 265);
+  --card-foreground: var(--foreground);
+  --popover: oklch(0.232 0.014 265);
+  --popover-foreground: var(--foreground);
+
+  --muted: oklch(0.252 0.014 265);
+  --muted-foreground: oklch(0.7 0.016 265);
+  --subtle: oklch(0.232 0.013 265);
+
+  --accent: oklch(0.272 0.016 265);
+  --accent-foreground: var(--foreground);
+
+  /* Lifted and slightly desaturated: the light theme's deep indigo has too
+     little luminance to read as an accent against a charcoal ground. */
+  --brand: oklch(0.7 0.155 279);
+  --brand-foreground: oklch(0.17 0.03 279);
+  --brand-muted: oklch(0.285 0.05 279);
+  --brand-border: oklch(0.4 0.09 279);
+
+  --primary: var(--brand);
+  --primary-foreground: var(--brand-foreground);
+
+  --secondary: oklch(0.262 0.015 265);
+  --secondary-foreground: oklch(0.94 0.004 265);
+
+  --ai: oklch(0.74 0.135 295);
+  --ai-foreground: oklch(0.18 0.03 295);
+  --ai-muted: oklch(0.29 0.045 295);
+  --ai-border: oklch(0.41 0.075 295);
+
+  --destructive: oklch(0.68 0.19 24);
+  --destructive-foreground: oklch(0.18 0.04 24);
+  --destructive-muted: oklch(0.3 0.062 24);
+  --destructive-border: oklch(0.43 0.11 24);
+
+  --warning: oklch(0.76 0.145 68);
+  --warning-foreground: oklch(0.2 0.04 68);
+  --warning-muted: oklch(0.305 0.055 68);
+  --warning-border: oklch(0.43 0.09 68);
+
+  --success: oklch(0.7 0.13 157);
+  --success-foreground: oklch(0.17 0.035 157);
+  --success-muted: oklch(0.29 0.05 157);
+  --success-border: oklch(0.42 0.085 157);
+
+  --border: oklch(1 0 0 / 0.1);
+  --border-strong: oklch(1 0 0 / 0.185);
+  --input: oklch(1 0 0 / 0.145);
+  --ring: oklch(0.7 0.155 279 / 0.6);
+
+  /* Dark surfaces don't cast visible shadows, so elevation is carried by the
+     surface ramp above; these stay only to keep depth under popovers. */
+  --shadow-color: 265 55% 2%;
+  --elevation-xs: 0 1px 2px 0 hsl(var(--shadow-color) / 0.3);
+  --elevation-sm:
+    0 1px 2px -1px hsl(var(--shadow-color) / 0.4), 0 1px 3px 0 hsl(var(--shadow-color) / 0.35);
+  --elevation-md:
+    0 2px 4px -2px hsl(var(--shadow-color) / 0.4), 0 4px 10px -2px hsl(var(--shadow-color) / 0.45);
+  --elevation-lg:
+    0 4px 8px -3px hsl(var(--shadow-color) / 0.45), 0 12px 24px -4px hsl(var(--shadow-color) / 0.5);
+  --elevation-xl:
+    0 8px 16px -6px hsl(var(--shadow-color) / 0.5), 0 24px 48px -8px hsl(var(--shadow-color) / 0.6);
+  --elevation-ring: 0 0 0 1px oklch(1 0 0 / 0.06);
+
+
+  --sidebar: oklch(0.2 0.012 265);
+  --sidebar-foreground: var(--foreground);
+  --sidebar-border: oklch(1 0 0 / 0.08);
+  --sidebar-accent: oklch(0.262 0.015 265);
+  --sidebar-accent-foreground: var(--foreground);
+  --sidebar-primary: var(--brand);
+  --sidebar-primary-foreground: var(--brand-foreground);
+  --sidebar-ring: var(--ring);
+}
+
+/* ==========================================================================
+   THEME MAPPING
+   Exposes every token above as a Tailwind utility (`bg-surface`, `text-ai`,
+   `border-border-strong`, `rounded-lg`, `shadow-md`, …). `inline` keeps the
+   var reference live, so `.dark` swaps take effect without regenerating
+   utilities.
+   ========================================================================== */
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+
+  --color-surface: var(--surface);
+  --color-surface-foreground: var(--surface-foreground);
+
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-subtle: var(--subtle);
+
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+
+  --color-brand: var(--brand);
+  --color-brand-foreground: var(--brand-foreground);
+  --color-brand-muted: var(--brand-muted);
+  --color-brand-border: var(--brand-border);
+
+  --color-ai: var(--ai);
+  --color-ai-foreground: var(--ai-foreground);
+  --color-ai-muted: var(--ai-muted);
+  --color-ai-border: var(--ai-border);
+
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-destructive-muted: var(--destructive-muted);
+  --color-destructive-border: var(--destructive-border);
+
+  --color-warning: var(--warning);
+  --color-warning-foreground: var(--warning-foreground);
+  --color-warning-muted: var(--warning-muted);
+  --color-warning-border: var(--warning-border);
+
+  --color-success: var(--success);
+  --color-success-foreground: var(--success-foreground);
+  --color-success-muted: var(--success-muted);
+  --color-success-border: var(--success-border);
+
+  --color-border: var(--border);
+  --color-border-strong: var(--border-strong);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  /* --- Radius scale ---------------------------------------------------- */
+  --radius-xs: calc(var(--radius) - 5px);
+  --radius-sm: calc(var(--radius) - 3px);
+  --radius-md: calc(var(--radius) - 1px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+  --radius-2xl: calc(var(--radius) + 10px);
+  --radius-3xl: calc(var(--radius) + 18px);
+
+  /* --- Typography ------------------------------------------------------
+     Inter for latin; the CJK run falls through to the platform's own face,
+     which on every target OS is better than any webfont worth shipping for a
+     zh-Hant UI (a subsetted Noto Sans TC is still ~1MB). */
+  --font-sans:
+    'Inter', ui-sans-serif, system-ui, -apple-system, 'PingFang TC', 'Noto Sans TC',
+    'Microsoft JhengHei', 'Hiragino Sans', sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+
+  /* Type scale. Sizes carry their own leading and tracking, because at these
+     weights the optical fix for a larger size is always tighter tracking —
+     leaving that to the call site is what makes headings drift apart. */
+  --text-2xs: 0.6875rem;
+  --text-2xs--line-height: 1.0625rem;
+  --text-2xs--letter-spacing: 0.04em;
+
+  --text-xs: 0.75rem;
+  --text-xs--line-height: 1.125rem;
+  --text-xs--letter-spacing: 0.015em;
+
+  --text-sm: 0.8125rem;
+  --text-sm--line-height: 1.375rem;
+
+  --text-base: 0.9375rem;
+  --text-base--line-height: 1.625rem;
+
+  --text-lg: 1.0625rem;
+  --text-lg--line-height: 1.75rem;
+  --text-lg--letter-spacing: -0.005em;
+
+  --text-xl: 1.25rem;
+  --text-xl--line-height: 1.875rem;
+  --text-xl--letter-spacing: -0.01em;
+
+  --text-2xl: 1.5rem;
+  --text-2xl--line-height: 2.125rem;
+  --text-2xl--letter-spacing: -0.017em;
+
+  --text-3xl: 1.875rem;
+  --text-3xl--line-height: 2.375rem;
+  --text-3xl--letter-spacing: -0.021em;
+
+  --text-4xl: 2.25rem;
+  --text-4xl--line-height: 2.625rem;
+  --text-4xl--letter-spacing: -0.025em;
+
+  --text-5xl: 2.875rem;
+  --text-5xl--line-height: 1.12;
+  --text-5xl--letter-spacing: -0.029em;
+
+  --text-6xl: 3.5rem;
+  --text-6xl--line-height: 1.08;
+  --text-6xl--letter-spacing: -0.032em;
+
+  /* --- Elevation -------------------------------------------------------- */
+  --shadow-xs: var(--elevation-xs);
+  --shadow-sm: var(--elevation-sm);
+  --shadow-md: var(--elevation-md);
+  --shadow-lg: var(--elevation-lg);
+  --shadow-xl: var(--elevation-xl);
+
+  /* --- Motion -----------------------------------------------------------
+     Two durations and two curves for the whole app. `out` decelerates for
+     things arriving; `inOut` for things that both open and close. */
+  --ease-out-quint: cubic-bezier(0.22, 1, 0.36, 1);
+  --ease-in-out-quint: cubic-bezier(0.83, 0, 0.17, 1);
+
+  --animate-shimmer: shimmer 3s linear infinite;
+  --animate-collapsible-down: collapsible-down 0.2s var(--ease-out-quint);
+  --animate-collapsible-up: collapsible-up 0.2s var(--ease-out-quint);
+  --animate-shake: shake 0.5s cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+  --animate-caret-blink: caret-blink 1.1s steps(2, start) infinite;
+
+  /* Keyframes prompt-kit's Loader / TextShimmer reference by name. Their
+     registry ships these as a Tailwind v3 `tailwind.config` block, which v4
+     has no equivalent of, so they are declared here instead. */
+  @keyframes shimmer {
+    0% {
+      background-position: 200% 50%;
+    }
+    100% {
+      background-position: -200% 50%;
+    }
+  }
+  @keyframes shimmer-text {
+    0% {
+      background-position: 150% center;
+    }
+    100% {
+      background-position: -150% center;
+    }
+  }
+  @keyframes typing {
+    0%,
+    100% {
+      transform: translateY(0);
+      opacity: 0.5;
+    }
+    50% {
+      transform: translateY(-2px);
+      opacity: 1;
+    }
+  }
+  @keyframes loading-dots {
+    0%,
+    100% {
+      opacity: 0;
+    }
+    50% {
+      opacity: 1;
+    }
+  }
+  @keyframes wave {
+    0%,
+    100% {
+      transform: scaleY(1);
+    }
+    50% {
+      transform: scaleY(0.6);
+    }
+  }
+  @keyframes wave-bars {
+    0%,
+    100% {
+      transform: scaleY(1);
+      opacity: 0.5;
+    }
+    50% {
+      transform: scaleY(0.6);
+      opacity: 1;
+    }
+  }
+  @keyframes blink {
+    0%,
+    100% {
+      opacity: 1;
+    }
+    50% {
+      opacity: 0;
+    }
+  }
+  @keyframes text-blink {
+    0%,
+    100% {
+      color: var(--primary);
+    }
+    50% {
+      color: var(--muted-foreground);
+    }
+  }
+  @keyframes bounce-dots {
+    0%,
+    100% {
+      transform: scale(0.8);
+      opacity: 0.5;
+    }
+    50% {
+      transform: scale(1.2);
+      opacity: 1;
+    }
+  }
+  @keyframes thin-pulse {
+    0%,
+    100% {
+      transform: scale(0.95);
+      opacity: 0.8;
+    }
+    50% {
+      transform: scale(1.05);
+      opacity: 0.4;
+    }
+  }
+  @keyframes pulse-dot {
+    0%,
+    100% {
+      transform: scale(1);
+      opacity: 0.8;
+    }
+    50% {
+      transform: scale(1.5);
+      opacity: 1;
+    }
+  }
+  @keyframes spinner-fade {
+    0% {
+      opacity: 0;
+    }
+    100% {
+      opacity: 1;
+    }
+  }
+  @keyframes collapsible-down {
+    from {
+      height: 0;
+      opacity: 0;
+    }
+    to {
+      height: var(--radix-collapsible-content-height);
+      opacity: 1;
+    }
+  }
+  @keyframes collapsible-up {
+    from {
+      height: var(--radix-collapsible-content-height);
+      opacity: 1;
+    }
+    to {
+      height: 0;
+      opacity: 0;
+    }
+  }
+  /* The timer's forced cutoff: the input shakes before the confirmation
+     appears, so a hard interrupt is felt rather than only read. */
+  @keyframes shake {
+    10%,
+    90% {
+      transform: translate3d(-1px, 0, 0);
+    }
+    20%,
+    80% {
+      transform: translate3d(2px, 0, 0);
+    }
+    30%,
+    50%,
+    70% {
+      transform: translate3d(-3px, 0, 0);
+    }
+    40%,
+    60% {
+      transform: translate3d(3px, 0, 0);
+    }
+  }
+  @keyframes caret-blink {
+    0%,
+    70%,
+    100% {
+      opacity: 1;
+    }
+    20%,
+    50% {
+      opacity: 0;
+    }
+  }
+}
+
+/* ==========================================================================
+   BASE
+   ========================================================================== */
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+
+  html {
+    -webkit-tap-highlight-color: transparent;
+    scrollbar-gutter: stable;
+  }
+
+  body {
+    @apply bg-background text-foreground font-sans antialiased;
+    /* `cv11` gives Inter the single-storey "l" that stops it colliding with
+       "1" in model names and timers; `ss01` fixes the disconnected "a". */
+    font-feature-settings:
+      'cv11' 1,
+      'ss01' 1;
+    text-rendering: optimizeLegibility;
+  }
+
+  /* Headings inherit weight from their component, never from the browser's
+     bold default — the type scale is set by the Text primitives. */
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6 {
+    @apply font-medium tracking-tight text-balance;
+  }
+
+  /* Anything that reads as a number the user compares or watches tick. */
+  [data-numeric],
+  time,
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+
+  ::selection {
+    background-color: var(--brand-muted);
+    color: var(--foreground);
+  }
+
+  /* One scrollbar treatment everywhere, instead of the OS overlay on one pane
+     and a native bar on the next. */
+  @supports selector(::-webkit-scrollbar) {
+    ::-webkit-scrollbar {
+      width: 10px;
+      height: 10px;
+    }
+    ::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    ::-webkit-scrollbar-thumb {
+      background-color: var(--border-strong);
+      border: 3px solid transparent;
+      background-clip: content-box;
+      border-radius: 9999px;
+    }
+    ::-webkit-scrollbar-thumb:hover {
+      background-color: var(--muted-foreground);
+    }
+  }
+}
+
+/* ==========================================================================
+   UTILITIES
+   Restrained on purpose. The old build carried four print-texture utilities
+   (noise, dots, 24px grid, diagonals); what is left is the two that still do
+   structural work — a grid for empty canvases and a soft brand glow for the
+   one hero surface per screen.
+   ========================================================================== */
+
+/* Faint 32px grid. Reads as "space waiting to be filled", which is exactly
+   what an empty idea board is. */
+@utility bg-grid {
   background-image:
-    linear-gradient(to right, rgba(0, 0, 0, 0.03) 1px, transparent 1px),
-    linear-gradient(to bottom, rgba(0, 0, 0, 0.03) 1px, transparent 1px);
-  background-size: 24px 24px;
+    linear-gradient(to right, var(--border) 1px, transparent 1px),
+    linear-gradient(to bottom, var(--border) 1px, transparent 1px);
+  background-size: 32px 32px;
+  mask-image: radial-gradient(ellipse 80% 60% at 50% 40%, black 30%, transparent 100%);
 }
 
-/* Dot matrix — traditional print texture for section headers/sidebars. */
-@utility swiss-dots {
-  background-image: radial-gradient(rgba(0, 0, 0, 0.05) 1px, transparent 1px);
-  background-size: 16px 16px;
-}
-
-/* 45deg repeating lines — directional energy for accent surfaces. */
-@utility swiss-diagonal {
-  background-image: repeating-linear-gradient(
-    45deg,
-    rgba(0, 0, 0, 0.025) 0,
-    rgba(0, 0, 0, 0.025) 1px,
-    transparent 1px,
-    transparent 10px
+/* Diffuse brand light behind a hero block. Large, low-opacity and off-centre,
+   so it registers as atmosphere rather than as a gradient. */
+@utility bg-glow {
+  background-image: radial-gradient(
+    ellipse 70% 55% at 22% 0%,
+    color-mix(in oklab, var(--brand) 11%, transparent) 0%,
+    transparent 72%
   );
 }
 
-/* Fractal noise — paper grain, applied globally at very low opacity.
-   Plain CSS (not @utility) since it needs a ::after pseudo-element. */
-@layer utilities {
-  .swiss-noise {
-    position: relative;
-  }
-  .swiss-noise::after {
-    content: '';
-    position: fixed;
-    inset: 0;
-    pointer-events: none;
-    opacity: 0.015;
-    z-index: 999;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
-  }
-}
-
-@layer base {
-  body {
-    @apply bg-background text-foreground font-sans antialiased;
-  }
-}
-
-/* Force-submit alert — input box shakes and flashes red before the
-   "ready for next question?" confirmation appears. */
-@keyframes shake-red {
-  10%,
-  90% {
-    transform: translate3d(-1px, 0, 0);
-  }
-  20%,
-  80% {
-    transform: translate3d(2px, 0, 0);
-  }
-  30%,
-  50%,
-  70% {
-    transform: translate3d(-4px, 0, 0);
-  }
-  40%,
-  60% {
-    transform: translate3d(4px, 0, 0);
-  }
-}
-
-@utility animate-shake-red {
-  animation: shake-red 0.5s cubic-bezier(0.36, 0.07, 0.19, 0.97) both;
+/* Hairline that fades out at both ends — for dividing sections inside a panel
+   without drawing a full-width rule across it. */
+@utility divider-fade {
+  height: 1px;
+  background-image: linear-gradient(to right, transparent, var(--border) 18%, var(--border) 82%, transparent);
 }
 
 @media (prefers-reduced-motion: reduce) {
@@ -90,6 +652,8 @@
   *::before,
   *::after {
     animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
   }
 }
