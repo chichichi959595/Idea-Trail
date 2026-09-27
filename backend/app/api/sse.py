@@ -20,6 +20,8 @@ from typing import AsyncIterator, Callable
 from fastapi import HTTPException
 from fastapi.responses import StreamingResponse
 
+from app.api.cancel import Cancelled, cancel_scope, stop_on_cancel
+
 logger = logging.getLogger(__name__)
 
 EventStream = AsyncIterator[dict]
@@ -48,7 +50,9 @@ def _encode(item: dict) -> bytes:
     return f"event: {item['kind']}\ndata: {json.dumps(item, ensure_ascii=False)}\n\n".encode()
 
 
-def sse_response(make_events: Callable[[], EventStream]) -> StreamingResponse:
+def sse_response(
+    make_events: Callable[[], EventStream], *, cancel_key: str | None = None
+) -> StreamingResponse:
     """Serve an event stream as SSE.
 
     The generator is built lazily inside the response so an HTTPException it
@@ -56,12 +60,28 @@ def sse_response(make_events: Callable[[], EventStream]) -> StreamingResponse:
     bytes are on the wire the status is already sent, so a later failure can
     only be reported as an `error` event — the client has to treat that as
     fatal rather than waiting for a `result` that will never come.
+
+    With a `cancel_key`, the stream is registered as interruptible for as long
+    as it runs: a `POST .../cancel` naming that key kills the provider call in
+    flight and ends the stream with a `cancelled` event instead of a `result`.
     """
+
+    async def events() -> AsyncIterator[dict]:
+        if cancel_key is None:
+            async for item in make_events():
+                yield item
+            return
+        with cancel_scope(cancel_key) as cancel:
+            async for item in stop_on_cancel(make_events(), cancel):
+                yield item
 
     async def body() -> AsyncIterator[bytes]:
         try:
-            async for item in make_events():
+            async for item in events():
                 yield _encode(item)
+        except Cancelled:
+            # Not an error: the user asked for this, and nothing was committed.
+            yield _encode(event("cancelled", detail="這次呼叫已中止"))
         except HTTPException as exc:
             yield _encode(event("error", detail=str(exc.detail), status=exc.status_code))
         except Exception as exc:  # noqa: BLE001 - the connection is the only channel left

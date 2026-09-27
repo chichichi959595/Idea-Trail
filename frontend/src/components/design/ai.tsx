@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { BrainIcon, SparklesIcon, UserIcon } from 'lucide-react'
+import { BrainIcon, SparklesIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Markdown } from '@/components/ui/markdown'
 import { Loader } from '@/components/ui/loader'
@@ -107,10 +107,13 @@ export function AiReasoning({
           {streaming ? <TextShimmer duration={2.4}>{heading}</TextShimmer> : heading}
         </span>
       </ReasoningTrigger>
+      {/* The gap above the body belongs to the body, not to the collapsing
+          wrapper. As a margin on the wrapper it stayed in the layout while the
+          panel was shut, so a closed box had 8px more space under its title
+          than over it. */}
       <ReasoningContent
         markdown
-        className="mt-2"
-        contentClassName={cn(proseClass, 'text-sm text-muted-foreground')}
+        contentClassName={cn(proseClass, 'pt-2 text-sm text-muted-foreground')}
       >
         {text}
       </ReasoningContent>
@@ -118,21 +121,17 @@ export function AiReasoning({
   )
 }
 
-/** Small round avatar for a conversation turn. Two roles only: the user, and
- * the model — the app has no third speaker. */
-function TurnAvatar({ role }: { role: 'user' | 'ai' }) {
-  const isAi = role === 'ai'
+/** The model's marker in the transcript. Only the model gets one: the user's
+ * own turn is marked by which side of the conversation it sits on, and a second
+ * glyph opposite this one only asked the reader to decode two icons instead of
+ * none. */
+function AiAvatar() {
   return (
     <span
       aria-hidden
-      className={cn(
-        'mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full border',
-        isAi
-          ? 'border-ai-border bg-ai-muted text-ai'
-          : 'border-border bg-muted text-muted-foreground',
-      )}
+      className="mt-0.5 flex size-7 shrink-0 items-center justify-center rounded-full border border-ai-border bg-ai-muted text-ai"
     >
-      {isAi ? <SparklesIcon className="size-3.5" /> : <UserIcon className="size-3.5" />}
+      <SparklesIcon className="size-3.5" />
     </span>
   )
 }
@@ -140,10 +139,11 @@ function TurnAvatar({ role }: { role: 'user' | 'ai' }) {
 /**
  * One turn in the ideation transcript, on prompt-kit's `Message`.
  *
- * The user's answers get a filled bubble; the model's replies sit on the page
- * with no bubble at all. That asymmetry is the convention every current AI
- * product uses, and it earns its keep here: it makes a long run scannable as
- * "what I said" versus "what came back" without a single label.
+ * The user's answers get a filled bubble on the right; the model's replies sit
+ * on the left with no bubble at all. That asymmetry is the convention every
+ * current AI product uses, and it earns its keep here: it makes a long run
+ * scannable as "what I said" versus "what came back" without a single label —
+ * and without an avatar on both sides.
  */
 export function Turn({
   role,
@@ -162,10 +162,21 @@ export function Turn({
   footer?: ReactNode
   className?: string
 }) {
-  const isAi = role === 'ai'
+  if (role === 'user') {
+    return (
+      <Message className={cn('flex-col items-end gap-1.5', className)}>
+        {label && <Eyebrow>{label}</Eyebrow>}
+        <div className="max-w-[85%] rounded-2xl bg-muted px-3.5 py-2.5 text-base leading-relaxed whitespace-pre-wrap text-foreground">
+          {children}
+        </div>
+        {footer && <div className="flex flex-wrap items-center gap-2 pt-0.5">{footer}</div>}
+      </Message>
+    )
+  }
+
   return (
     <Message className={cn('items-start gap-3', className)}>
-      <TurnAvatar role={role} />
+      <AiAvatar />
       <div className="flex min-w-0 flex-1 flex-col gap-1.5">
         {label && <Eyebrow>{label}</Eyebrow>}
         {markdown ? (
@@ -173,16 +184,9 @@ export function Turn({
         ) : (
           // prompt-kit's `MessageContent` types its children as
           // `ReactNode & string` whether or not `markdown` is set, which no
-          // single child satisfies — so the bubble is a plain div here. `Message`
-          // still supplies the turn layout.
-          <div
-            className={cn(
-              'text-base leading-relaxed whitespace-pre-wrap',
-              isAi ? '' : 'rounded-xl bg-muted px-3.5 py-2.5 text-foreground',
-            )}
-          >
-            {children}
-          </div>
+          // single child satisfies — so the body is a plain div here.
+          // `Message` still supplies the turn layout.
+          <div className="text-base leading-relaxed whitespace-pre-wrap">{children}</div>
         )}
         {footer && <div className="flex flex-wrap items-center gap-2 pt-0.5">{footer}</div>}
       </div>

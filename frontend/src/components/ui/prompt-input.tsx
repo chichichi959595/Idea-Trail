@@ -14,6 +14,10 @@ import React, {
   useState,
 } from "react"
 
+/** Which key combination sends. `shift-enter` leaves bare Enter as a newline,
+ * for a box people compose more than one line in. */
+export type SubmitShortcut = "enter" | "shift-enter"
+
 type PromptInputContextType = {
   isLoading: boolean
   value: string
@@ -21,6 +25,7 @@ type PromptInputContextType = {
   maxHeight: number | string
   onSubmit?: () => void
   disabled?: boolean
+  submitOn: SubmitShortcut
   textareaRef: React.RefObject<HTMLTextAreaElement | null>
 }
 
@@ -31,6 +36,7 @@ const PromptInputContext = createContext<PromptInputContextType>({
   maxHeight: 240,
   onSubmit: undefined,
   disabled: false,
+  submitOn: "enter",
   textareaRef: React.createRef<HTMLTextAreaElement>(),
 })
 
@@ -47,6 +53,7 @@ export type PromptInputProps = {
   children: React.ReactNode
   className?: string
   disabled?: boolean
+  submitOn?: SubmitShortcut
 } & React.ComponentProps<"div">
 
 function PromptInput({
@@ -58,6 +65,7 @@ function PromptInput({
   onSubmit,
   children,
   disabled = false,
+  submitOn = "enter",
   onClick,
   ...props
 }: PromptInputProps) {
@@ -84,6 +92,7 @@ function PromptInput({
           maxHeight,
           onSubmit,
           disabled,
+          submitOn,
           textareaRef,
         }}
       >
@@ -113,7 +122,7 @@ function PromptInputTextarea({
   disableAutosize = false,
   ...props
 }: PromptInputTextareaProps) {
-  const { value, setValue, maxHeight, onSubmit, disabled, textareaRef } =
+  const { value, setValue, maxHeight, onSubmit, disabled, submitOn, textareaRef } =
     usePromptInput()
 
   const adjustHeight = (el: HTMLTextAreaElement | null) => {
@@ -153,7 +162,9 @@ function PromptInputTextarea({
   }
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
-    if (e.key === "Enter" && !e.shiftKey) {
+    // Whichever combination isn't the send falls through to the textarea and
+    // inserts a newline, so one flag covers both halves of the choice.
+    if (e.key === "Enter" && e.shiftKey === (submitOn === "shift-enter")) {
       e.preventDefault()
       onSubmit?.()
     }

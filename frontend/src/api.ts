@@ -8,7 +8,7 @@ import type {
   Session,
 } from './types'
 
-const BASE_URL = 'http://127.0.0.1:8000'
+const BASE_URL = 'http://127.0.0.1:8011'
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE_URL}${path}`, {
@@ -26,11 +26,29 @@ async function request<T>(path: string, options?: RequestInit): Promise<T> {
 export type OnThinking = (text: string) => void
 
 interface StreamEvent {
-  kind: 'thinking' | 'text' | 'result' | 'error'
+  kind: 'thinking' | 'text' | 'result' | 'error' | 'cancelled'
   text?: string
   payload?: unknown
   detail?: string
   status?: number
+}
+
+/**
+ * The user pressed stop. Thrown instead of resolving, because there is no
+ * result — but it is not a failure either, so callers check for it before they
+ * show an error.
+ */
+export class StreamStopped extends Error {
+  constructor(detail = '這次呼叫已中止') {
+    super(detail)
+    this.name = 'StreamStopped'
+  }
+}
+
+/** True for both halves of a stop: the backend's `cancelled` event, and the
+ * local `fetch` abort that usually gets there first. */
+export function isStopped(error: unknown): boolean {
+  return error instanceof StreamStopped || (error instanceof Error && error.name === 'AbortError')
 }
 
 /**
@@ -79,6 +97,10 @@ async function streamRequest<T>(
       const event = JSON.parse(line.slice('data: '.length)) as StreamEvent
       if (event.kind === 'thinking' || event.kind === 'text') {
         if (event.text) onThinking?.(event.text)
+      } else if (event.kind === 'cancelled') {
+        // The backend confirming it stopped. Usually the local abort has
+        // already ended this read, so this is the belt to that braces.
+        throw new StreamStopped(event.detail)
       } else if (event.kind === 'error') {
         // The status was already sent as 200, so a failure can only arrive
         // like this — treat it exactly like a thrown request error.
@@ -109,12 +131,13 @@ export const api = {
     provider = 'claude',
     model?: string | null,
     onThinking?: OnThinking,
+    signal?: AbortSignal,
   ) => {
     const params = new URLSearchParams({ provider })
     if (model) params.set('model', model)
     return streamRequest<MethodRecommendationResult>(
       `/sessions/${sessionId}/method-recommendation/stream?${params}`,
-      { method: 'POST' },
+      { method: 'POST', signal },
       onThinking,
     )
   },
@@ -144,19 +167,35 @@ export const api = {
     answer: string,
     force = false,
     onThinking?: OnThinking,
+    signal?: AbortSignal,
   ) =>
     streamRequest<AnswerStepResponse>(
       `/method-runs/${runId}/answer/stream`,
-      { method: 'POST', body: JSON.stringify({ step_index: stepIndex, answer, force }) },
+      {
+        method: 'POST',
+        body: JSON.stringify({ step_index: stepIndex, answer, force }),
+        signal,
+      },
       onThinking,
     ),
 
-  retryFinalize: (runId: number, onThinking?: OnThinking) =>
+  retryFinalize: (runId: number, onThinking?: OnThinking, signal?: AbortSignal) =>
     streamRequest<AnswerStepResponse>(
       `/method-runs/${runId}/finalize/stream`,
-      { method: 'POST' },
+      { method: 'POST', signal },
       onThinking,
     ),
+
+  /**
+   * Stop whatever call this run has in flight.
+   *
+   * Aborting the `fetch` on its own is not enough: the backend only notices a
+   * dead connection when it next writes to it, and a CLI provider writes
+   * nothing for the whole call — so the subprocess would run to completion,
+   * still spending the user's quota. This is the request that kills it.
+   */
+  cancelMethodRun: (runId: number) =>
+    request<{ stopped: boolean }>(`/method-runs/${runId}/cancel`, { method: 'POST' }),
 
   listIdeas: (sessionId: number) => request<Idea[]>(`/sessions/${sessionId}/ideas`),
 

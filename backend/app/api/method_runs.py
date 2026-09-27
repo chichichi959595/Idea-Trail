@@ -8,6 +8,7 @@ from sqlalchemy.orm import Session as DbSession
 
 from app.agents.framework import get_framework_agent
 from app.agents.framework.base import FORCE_ACCEPT_INSTRUCTION
+from app.api.cancel import request_cancel
 from app.api.serializers import idea_to_dict, method_run_to_dict
 from app.api.sse import EventStream, drain, event, sse_response
 from app.db.llm_log import log_llm_call
@@ -19,6 +20,11 @@ from app.providers.registry import get_provider, resolve_model, resolve_step_mod
 from app.schemas.requests import AnswerStepRequest, CreateMethodRunRequest
 
 router = APIRouter(tags=["method-runs"])
+
+
+def _cancel_key(run_id: int) -> str:
+    """One in-flight call per run, so the run's id is the whole key."""
+    return f"method-run:{run_id}"
 
 
 @router.post("/sessions/{session_id}/method-runs")
@@ -60,6 +66,27 @@ def create_method_run(
     db.add(first_step)
     db.commit()
     return method_run_to_dict(run)
+
+
+@router.post("/method-runs/{run_id}/cancel")
+async def cancel_method_run(run_id: int):
+    """Stop whatever provider call this run has in flight.
+
+    `async` on purpose, and it matters: the stop is delivered by setting an
+    `asyncio.Event` that the in-flight stream is waiting on, and
+    `asyncio.Event.set()` only wakes that waiter when it is called from the
+    loop the waiter lives on. A plain `def` here would be run in FastAPI's
+    threadpool, where the set would race the loop instead of waking it.
+
+    The user pressed the stop button that replaces send while a call is
+    running. Nothing has been written yet — the step is only stored once the
+    provider comes back — so stopping leaves the run exactly where it was, on
+    the same question, with the answer handed back to the input box.
+
+    `stopped: false` just means there was nothing to stop (the call landed a
+    moment before the button did), which is not an error for the caller.
+    """
+    return {"stopped": request_cancel(_cancel_key(run_id))}
 
 
 @router.get("/method-runs/{run_id}")
@@ -145,7 +172,9 @@ async def answer_step_stream(
     # Validated before the response starts so a stale step_index is still a
     # 409 rather than an `error` event inside a 200.
     _load_run_for_answer(db, run_id, payload)
-    return sse_response(lambda: _answer_step_events(db, run_id, payload))
+    return sse_response(
+        lambda: _answer_step_events(db, run_id, payload), cancel_key=_cancel_key(run_id)
+    )
 
 
 async def _answer_step_events(
@@ -284,7 +313,9 @@ async def retry_finalize(run_id: int, db: DbSession = Depends(get_db)):
 @router.post("/method-runs/{run_id}/finalize/stream")
 async def retry_finalize_stream(run_id: int, db: DbSession = Depends(get_db)):
     _load_run_for_finalize(db, run_id)
-    return sse_response(lambda: _retry_finalize_events(db, run_id))
+    return sse_response(
+        lambda: _retry_finalize_events(db, run_id), cancel_key=_cancel_key(run_id)
+    )
 
 
 async def _retry_finalize_events(db: DbSession, run_id: int) -> EventStream:

@@ -6,6 +6,7 @@ import time
 from typing import Optional
 
 from .base import LLMResult, ModelOption, ProviderError
+from .process import communicate, spawn
 
 _CONCURRENCY = asyncio.Semaphore(2)
 _TIMEOUT_SECONDS = 180
@@ -134,22 +135,13 @@ class ClaudeCodeProvider:
         started = time.monotonic()
         async with _CONCURRENCY:
             try:
-                proc = await asyncio.create_subprocess_exec(
-                    *argv,
-                    # Without this the CLI blocks ~3s per call waiting for
-                    # stdin it is never given ("no stdin data received in 3s").
-                    stdin=asyncio.subprocess.DEVNULL,
-                    stdout=asyncio.subprocess.PIPE,
-                    stderr=asyncio.subprocess.PIPE,
-                )
-                stdout, stderr = await asyncio.wait_for(
-                    proc.communicate(), timeout=_TIMEOUT_SECONDS
-                )
-            except asyncio.TimeoutError as exc:
-                proc.kill()
-                raise ProviderError(f"claude CLI timed out after {_TIMEOUT_SECONDS}s") from exc
+                proc = await spawn(*argv)
             except FileNotFoundError as exc:
                 raise ProviderError("claude CLI not found on PATH") from exc
+            try:
+                stdout, stderr = await communicate(proc, timeout=_TIMEOUT_SECONDS)
+            except asyncio.TimeoutError as exc:
+                raise ProviderError(f"claude CLI timed out after {_TIMEOUT_SECONDS}s") from exc
 
         if proc.returncode != 0:
             raise ProviderError(
@@ -183,20 +175,13 @@ class ClaudeCodeProvider:
 
     async def health(self) -> dict:
         try:
-            proc = await asyncio.create_subprocess_exec(
-                "claude",
-                "auth",
-                "status",
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
+            proc = await spawn("claude", "auth", "status")
         except FileNotFoundError as exc:
             return {"ok": False, "detail": str(exc)}
         try:
-            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=15)
-        except asyncio.TimeoutError as exc:
             # Otherwise the probe returns and the CLI keeps running unreaped.
-            proc.kill()
+            stdout, stderr = await communicate(proc, timeout=15)
+        except asyncio.TimeoutError as exc:
             return {"ok": False, "detail": str(exc)}
 
         if proc.returncode != 0:

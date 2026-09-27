@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ArrowRightIcon, SparklesIcon } from 'lucide-react'
+import { ArrowRightIcon, EraserIcon, SparklesIcon } from 'lucide-react'
 import type { Session } from '../types'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -12,6 +12,7 @@ import { Display, Eyebrow, Small } from '@/components/design/typography'
 import { ErrorState } from '@/components/design/states'
 import { AiWorking } from '@/components/design/ai'
 import { ThemeControl } from '@/components/design/theme'
+import { Wordmark } from '@/components/design/brand'
 
 interface Props {
   onSubmit: (payload: Partial<Session>) => void
@@ -55,26 +56,41 @@ export function NewSessionForm({ onSubmit, submitting, error }: Props) {
   return (
     <div className="bg-glow">
       <Page className="max-w-3xl">
-        <header className="flex flex-col gap-4 pb-10">
+        {/* `px-5` matches CardContent's own inset, so the wordmark, the
+            headline and the 01/02 section titles inside the cards below all sit
+            on one left edge instead of the header hanging 20px further out. */}
+        <header className="flex flex-col gap-5 px-5 pb-10">
           {/* The appearance switch lives in the rail on every other screen, and
-              this screen has no rail — so it sits on the badge row here rather
-              than leaving the first screen the one place the theme can't be
-              changed. */}
+              this screen has no rail — so it sits on the wordmark row here
+              rather than leaving the first screen the one place the theme can't
+              be changed. */}
           <div className="flex flex-wrap items-center justify-between gap-3">
-            <span className="inline-flex w-fit items-center gap-2 rounded-full border border-brand-border bg-brand-muted px-2.5 py-1 text-xs font-medium text-primary">
-              <SparklesIcon className="size-3.5" aria-hidden />
-              本機 Claude / Codex 訂閱額度驅動
-            </span>
+            <Wordmark />
             <ThemeControl className="shrink-0" />
           </div>
+
           <Display>
             把模糊的想法
             <br />
             帶到能動手做的題目
           </Display>
+
+          {/* The one line that says what the product believes. It earns the
+              brand rule and the larger size because it is the argument for
+              using a guided method at all rather than asking a model for ten
+              titles — everything below this is just intake. */}
+          <p className="border-l-2 border-primary/40 pl-4 text-lg leading-relaxed font-medium text-pretty text-foreground/90 sm:text-xl">
+            好題目不是憑靈感想出來的，是被一步一步問出來的。
+          </p>
+
           <Small className="max-w-lg text-base">
             系統會依你們團隊的狀況挑選發想方法，一步步引導，再把過程收斂成具體的候選提案。
           </Small>
+
+          <span className="inline-flex w-fit items-center gap-2 rounded-full border border-brand-border bg-brand-muted px-2.5 py-1 text-xs font-medium text-primary">
+            <SparklesIcon className="size-3.5" aria-hidden />
+            本機 Claude / Codex 訂閱額度驅動
+          </span>
         </header>
 
         <form
@@ -122,21 +138,31 @@ export function NewSessionForm({ onSubmit, submitting, error }: Props) {
                 </Field>
               </div>
 
-              <Field label="技術背景" hint="可多選">
+              <Field label="技術背景" hint="可多選" group>
                 <ChipGroup
+                  label="技術背景"
                   options={TECH_OPTIONS}
                   selected={techSelected}
                   onToggle={(opt) => toggle(techSelected, setTechSelected, opt)}
+                  onClear={() => {
+                    setTechSelected([])
+                    setTechOther('')
+                  }}
                   otherValue={techOther}
                   onOtherChange={setTechOther}
                 />
               </Field>
 
-              <Field label="領域偏好" hint="可多選">
+              <Field label="領域偏好" hint="可多選" group>
                 <ChipGroup
+                  label="領域偏好"
                   options={DOMAIN_OPTIONS}
                   selected={domainSelected}
                   onToggle={(opt) => toggle(domainSelected, setDomainSelected, opt)}
+                  onClear={() => {
+                    setDomainSelected([])
+                    setDomainOther('')
+                  }}
                   otherValue={domainOther}
                   onOtherChange={setDomainOther}
                 />
@@ -190,8 +216,12 @@ export function NewSessionForm({ onSubmit, submitting, error }: Props) {
 
           {error && <ErrorState title="建立工作台失敗" detail={error} />}
 
-          <div className="flex flex-wrap items-center gap-4">
-            <Button type="submit" size="xl" disabled={submitting} className="w-full sm:w-auto">
+          {/* Left-aligned, and never stretched to the full width: the button
+              belongs on the same edge as everything the user has just filled in,
+              and a full-width button centres its own label, which reads as a
+              third alignment on a screen that only has one. */}
+          <div className="flex flex-wrap items-center justify-start gap-4 px-5">
+            <Button type="submit" size="xl" disabled={submitting} className="w-fit">
               建立工作台
               <ArrowRightIcon />
             </Button>
@@ -203,54 +233,129 @@ export function NewSessionForm({ onSubmit, submitting, error }: Props) {
   )
 }
 
-/** Label + optional hint above a control. Replaces the old bare `<label>` +
- * uppercase `Meta`, so every field on every screen has the same header shape. */
+/**
+ * Label + optional hint above a control. Replaces the old bare `<label>` +
+ * uppercase `Meta`, so every field on every screen has the same header shape.
+ *
+ * `group` swaps the `<label>` for a labelled group. A `<label>` forwards its
+ * clicks to one control, which is wrong (and, with a clear button inside,
+ * actively confusing) for a field whose body is a set of buttons.
+ */
 function Field({
   label,
   hint,
+  group = false,
   children,
 }: {
   label: string
   hint?: string
+  group?: boolean
   children: React.ReactNode
 }) {
+  const Wrapper = group ? 'div' : 'label'
   return (
-    <label className="flex flex-col gap-2">
+    <Wrapper
+      className="flex flex-col gap-2"
+      {...(group ? { role: 'group', 'aria-label': label } : {})}
+    >
       <span className="flex items-baseline gap-2">
         <span className="text-sm font-medium">{label}</span>
         {hint && <Eyebrow className="normal-case tracking-normal">{hint}</Eyebrow>}
       </span>
       {children}
-    </label>
+    </Wrapper>
   )
 }
 
-/** Multi-select chips with a built-in 其他 free-text escape hatch. */
+/**
+ * Multi-select chips in two parts: what you've chosen on top, what's left to
+ * choose from below.
+ *
+ * One wrapping row of toggles made the answer to "so what did we say we know?"
+ * something you had to re-read the whole row to work out, picking the ticked
+ * ones out of the unticked. Splitting it means the chosen set is a short line
+ * you can read at a glance, and the pool below is a grid — several columns, one
+ * option per cell — so twelve options scan as a list of choices rather than as
+ * a paragraph of pills at ragged widths.
+ *
+ * 其他 lives in the pool like any other option and brings its free-text box with
+ * it when it moves up.
+ */
 function ChipGroup({
+  label,
   options,
   selected,
   onToggle,
+  onClear,
   otherValue,
   onOtherChange,
 }: {
+  label: string
   options: string[]
   selected: string[]
   onToggle: (option: string) => void
+  onClear: () => void
   otherValue: string
   onOtherChange: (value: string) => void
 }) {
+  const all = [...options, OTHER_OPTION]
+  // Ordered by the catalog, not by when each one was clicked: the chosen row is
+  // read as a set, and having it reshuffle on every pick makes it look like
+  // something else changed too.
+  const chosen = all.filter((opt) => selected.includes(opt))
+  const pool = all.filter((opt) => !selected.includes(opt))
+
   return (
-    <div className="flex flex-col gap-2.5">
-      <div className="flex flex-wrap gap-1.5">
-        {[...options, OTHER_OPTION].map((opt) => (
-          <Chip key={opt} selected={selected.includes(opt)} onSelect={() => onToggle(opt)}>
-            {opt}
-          </Chip>
-        ))}
+    <div className="flex flex-col gap-2.5 rounded-xl border border-border bg-subtle p-3">
+      <div className="flex items-start justify-between gap-3">
+        {chosen.length > 0 ? (
+          <div className="flex flex-wrap gap-1.5">
+            {chosen.map((opt) => (
+              <Chip key={opt} selected indicator="remove" onSelect={() => onToggle(opt)}>
+                {opt}
+              </Chip>
+            ))}
+          </div>
+        ) : (
+          <p className="py-1.5 text-sm text-muted-foreground">還沒選，從下面點一個就會移上來</p>
+        )}
+
+        <Button
+          type="button"
+          variant="ghost"
+          size="xs"
+          className="mt-1 shrink-0 text-muted-foreground hover:text-foreground"
+          disabled={chosen.length === 0}
+          onClick={onClear}
+          aria-label={`清空${label}`}
+        >
+          <EraserIcon />
+          清空
+        </Button>
       </div>
+
+      {pool.length > 0 && (
+        <>
+          <div aria-hidden className="divider-fade" />
+          <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2 lg:grid-cols-3">
+            {pool.map((opt) => (
+              <Chip
+                key={opt}
+                indicator="add"
+                onSelect={() => onToggle(opt)}
+                className="w-full justify-start"
+              >
+                {opt}
+              </Chip>
+            ))}
+          </div>
+        </>
+      )}
+
       {selected.includes(OTHER_OPTION) && (
         <Input
           placeholder="請說明"
+          aria-label={`${label}：其他`}
           value={otherValue}
           onChange={(e) => onOtherChange(e.target.value)}
         />

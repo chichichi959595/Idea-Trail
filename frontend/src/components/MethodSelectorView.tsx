@@ -28,7 +28,7 @@ import {
 import { Selectable } from '@/components/design/selectable'
 import { Page, Section, SectionHeader, StickyFooter } from '@/components/design/section'
 import { Eyebrow, Small, Subhead } from '@/components/design/typography'
-import { ErrorState, Notice, RowSkeleton } from '@/components/design/states'
+import { EmptyState, ErrorState, Notice, RowSkeleton } from '@/components/design/states'
 import { AiMarkdown, AiReasoning, AiWorking } from '@/components/design/ai'
 
 interface Props {
@@ -43,7 +43,10 @@ interface Props {
   recommending: boolean
   thinking: string
   recommendError: string | null
-  onStart: (method: string) => void
+  /** Starts the run with the settings showing on this screen, rather than with
+   * whatever the last AI recommendation happened to use — picking a method by
+   * hand must not require having paid for a recommendation first. */
+  onStart: (method: string, provider: string, model: string, stepModel: string) => void
   starting: boolean
 }
 
@@ -76,6 +79,13 @@ export function MethodSelectorView({
   // provider: 'deep' drives method selection and convergence, 'step' drives
   // the per-step agents.
   const [picks, setPicks] = useState<Record<string, Partial<Record<Role, string>>>>({})
+  // What the user has clicked, as opposed to what is actually running.
+  //
+  // Clicking a card used to be the trigger for the AI call. That made an
+  // exploratory click — or a second thought about which model — cost a real
+  // call, and on the CLI routes that is a minute of waiting the user never
+  // asked for. So the click only drafts; the button below commits.
+  const [draft, setDraft] = useState<ProviderId | ''>((provider as ProviderId) || '')
 
   function modelFor(p: ProviderId, role: Role) {
     const health = providersHealth?.[p]
@@ -88,33 +98,52 @@ export function MethodSelectorView({
 
   function selectProvider(p: ProviderId) {
     if (providersHealth?.[p]?.ok === false || recommending) return
-    onProviderChange(p, modelFor(p, 'deep'), modelFor(p, 'step'))
+    setDraft(p)
   }
 
   function changeModel(p: ProviderId, role: Role, nextModel: string) {
     setPicks((prev) => ({ ...prev, [p]: { ...prev[p], [role]: nextModel } }))
-    if (p !== provider || recommending) return
-    // The deep model drives the method-selection call, so changing it on the
-    // active provider re-runs that call. The step model doesn't feed it, so
-    // that pick just waits until a run starts. On an idle card neither one
-    // burns an LLM call.
-    if (role === 'deep') onProviderChange(p, nextModel, modelFor(p, 'step'))
+    // Changing a model is a change to the draft, nothing more. It used to
+    // re-run the whole recommendation the moment the dropdown closed.
+    if (!recommending) setDraft(p)
+  }
+
+  const draftDeep = draft ? modelFor(draft, 'deep') : ''
+  const draftStep = draft ? modelFor(draft, 'step') : ''
+  // Whether the draft differs from the settings the current recommendation was
+  // actually produced with. That, not "has a card been clicked", is what the
+  // confirm button is for.
+  const dirty = !!draft && (draft !== provider || draftDeep !== model || draftStep !== stepModel)
+  const canConfirm = !!draft && !recommending && (dirty || recommendError !== null)
+
+  const confirmLabel = !provider
+    ? '讓 AI 開始推薦方法'
+    : recommendError
+      ? '再試一次'
+      : '用這個設定重新推薦'
+
+  function confirmProvider() {
+    if (!canConfirm || !draft) return
+    onProviderChange(draft, draftDeep, draftStep)
   }
 
   function select(method: string) {
-    if (!provider || starting) return
+    if (!draft || starting) return
     setSelectedMethod(method)
   }
 
-  function labelForModel(id: string) {
-    return providersHealth?.[provider as ProviderId]?.models?.find((m) => m.id === id)?.label ?? id
+  // Keyed by provider, because the draft row names models for a card that may
+  // not be the one currently running.
+  function labelForModelOf(p: ProviderId, id: string) {
+    return providersHealth?.[p]?.models?.find((m) => m.id === id)?.label ?? id
   }
   // Both picks in the footer summary, and collapsed to one when they're the
   // same model — repeating an identical name twice reads like a bug.
-  const activeModelLabel =
-    stepModel && stepModel !== model
-      ? `${labelForModel(model)} / 步驟 ${labelForModel(stepModel)}`
-      : labelForModel(model)
+  const draftModelLabel = !draft
+    ? ''
+    : draftStep && draftStep !== draftDeep
+      ? `${labelForModelOf(draft, draftDeep)} / 步驟 ${labelForModelOf(draft, draftStep)}`
+      : labelForModelOf(draft, draftDeep)
 
   return (
     <Page>
@@ -123,7 +152,7 @@ export function MethodSelectorView({
           <SectionHeader
             eyebrow="01"
             title="選一個額度來源"
-            description="挑好之後 AI 會立刻讀你們填的內容，從 10 種發想方法裡排出最適合的 3 個。"
+            description="選一張卡片跟要用的模型，再按下面的按鈕確認。確認之後 AI 才會讀你們填的內容、開始排方法。"
           />
 
           <div className="grid grid-cols-1 gap-3 md:grid-cols-3">
@@ -131,7 +160,7 @@ export function MethodSelectorView({
               const health = providersHealth?.[p]
               const unavailable = health?.ok === false
               const models = health?.models ?? []
-              const selected = provider === p
+              const selected = draft === p
               const deepModel = modelFor(p, 'deep')
               const stepModelFor = modelFor(p, 'step')
               const currentDescription = models.find((m) => m.id === deepModel)?.description
@@ -228,6 +257,29 @@ export function MethodSelectorView({
               )
             })}
           </div>
+
+          {/* The commit. Selection and "spend a call on it" are two separate
+              acts now, so the second one gets its own button — and the row
+              states which settings that button is about to use. */}
+          <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
+            <Small className="min-w-0 text-xs">
+              {draft ? (
+                <>
+                  已選 <span className="font-medium text-foreground">{PROVIDER_LABELS[draft]}</span>
+                  {draftDeep && ` · 收斂 ${labelForModelOf(draft, draftDeep)}`}
+                  {draftStep && draftStep !== draftDeep &&
+                    ` · 步驟 ${labelForModelOf(draft, draftStep)}`}
+                  {provider && !dirty && !recommendError && ' · 已在使用'}
+                </>
+              ) : (
+                '點一張卡片選額度來源，還不會花到額度'
+              )}
+            </Small>
+            <Button size="lg" disabled={!canConfirm} onClick={confirmProvider}>
+              {confirmLabel}
+              <ArrowRightIcon />
+            </Button>
+          </div>
         </Section>
 
         <Section>
@@ -237,10 +289,34 @@ export function MethodSelectorView({
             description="系統先用規則排了一份參考順序，最終的排名與理由由 AI 決定。"
           />
 
-          {!provider && !recommending && (
+          {/* Two distinct "nothing here yet" states, because they want
+              different things from the user. Before a card is drafted, the next
+              move is upstairs. Once one is drafted, the screen's job is to say
+              what pressing that button will actually get them — this used to go
+              straight from the click into a spinner, so nobody ever found out
+              the AI was about to do the choosing. */}
+          {!draft && !recommending && (
             <Notice tone="brand" icon={WandSparklesIcon} title="還沒選額度來源">
               先挑上面一張卡片（順便選要用哪個模型），AI 才會開始判斷該推薦哪些發想方法。
             </Notice>
+          )}
+
+          {draft && !recommending && recommendations.length === 0 && !recommendError && (
+            /* No button of its own: the one that starts this sits just above,
+               and two identical primary buttons in one eyeful read as a mistake
+               rather than as a choice. */
+            <EmptyState
+              icon={WandSparklesIcon}
+              eyebrow="等你按上面的按鈕"
+              title="AI 會幫你們挑方法"
+              description={
+                <>
+                  按下「{confirmLabel}」之後，它會讀你們剛剛填的團隊條件，
+                  從 10 種發想方法裡排出最適合的 3 個，並且逐一說明為什麼是這幾個。
+                  你也可以不理它，直接從下面的完整清單自己挑。
+                </>
+              }
+            />
           )}
 
           {recommending && (
@@ -290,14 +366,17 @@ export function MethodSelectorView({
             </ol>
           )}
 
-          {provider && !recommending && (
+          {draft && !recommending && (
             <Collapsible className="rounded-xl border border-border bg-surface">
               <CollapsibleTrigger className="group flex w-full items-center justify-between gap-2 px-4 py-3 text-left text-sm font-medium transition-colors hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none">
                 手動選擇其他方法
                 <ChevronDownIcon className="size-4 text-muted-foreground transition-transform duration-200 group-data-[state=open]:rotate-180" />
               </CollapsibleTrigger>
               <CollapsibleContent className="data-[state=closed]:animate-collapsible-up data-[state=open]:animate-collapsible-down overflow-hidden">
-                <div className="grid grid-cols-1 gap-2.5 border-t border-border p-4 sm:grid-cols-2">
+                {/* No rule between the trigger and the grid: the panel is
+                    already a bordered box, and cutting it in two made the
+                    header read as a second, emptier section. */}
+                <div className="grid grid-cols-1 gap-2.5 px-4 pt-1 pb-4 sm:grid-cols-2">
                   {allMethods.map((m) => (
                     <Selectable
                       key={m.name}
@@ -318,6 +397,8 @@ export function MethodSelectorView({
       </div>
 
       <StickyFooter>
+        {/* Names the draft, not the settings the last recommendation ran on:
+            the draft is what the run will actually be started with. */}
         <Small className="min-w-0 text-xs">
           {selectedMethod ? (
             <>
@@ -326,11 +407,11 @@ export function MethodSelectorView({
           ) : (
             '尚未選擇方法'
           )}
-          {provider && (
+          {draft && (
             <>
               {' · '}
-              {PROVIDER_LABELS[provider as ProviderId] ?? provider}
-              {activeModelLabel && ` / ${activeModelLabel}`}
+              {PROVIDER_LABELS[draft]}
+              {draftModelLabel && ` / ${draftModelLabel}`}
             </>
           )}
         </Small>
@@ -339,8 +420,8 @@ export function MethodSelectorView({
         ) : (
           <Button
             size="lg"
-            disabled={!selectedMethod}
-            onClick={() => selectedMethod && onStart(selectedMethod)}
+            disabled={!selectedMethod || !draft}
+            onClick={() => selectedMethod && draft && onStart(selectedMethod, draft, draftDeep, draftStep)}
           >
             開始發想
             <ArrowRightIcon />

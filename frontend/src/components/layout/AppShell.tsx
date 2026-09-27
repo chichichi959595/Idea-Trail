@@ -2,8 +2,9 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { CheckIcon, MenuIcon, XIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
-import { Eyebrow, Mono } from '@/components/design/typography'
+import { Eyebrow } from '@/components/design/typography'
 import { ThemeControl } from '@/components/design/theme'
+import { BrandLockup } from '@/components/design/brand'
 
 /**
  * The app shell: a fixed rail of context on the left, one working surface on the
@@ -52,7 +53,7 @@ export function AppShell({
 
   const rail = (
     <div className="flex h-full flex-col gap-6 overflow-y-auto px-4 py-5">
-      <Brand />
+      <BrandLockup />
 
       <nav aria-label="工作階段" className="flex flex-col gap-0.5">
         <Eyebrow className="px-2 pb-2">工作階段</Eyebrow>
@@ -90,7 +91,7 @@ export function AppShell({
         >
           <MenuIcon />
         </Button>
-        <Brand compact />
+        <BrandLockup compact />
       </header>
 
       <aside className="hidden border-r border-sidebar-border bg-sidebar lg:sticky lg:top-0 lg:block lg:h-svh">
@@ -121,28 +122,6 @@ export function AppShell({
       )}
 
       <main className="min-w-0">{children}</main>
-    </div>
-  )
-}
-
-function Brand({ compact = false }: { compact?: boolean }) {
-  return (
-    <div className={cn('flex items-center gap-2.5', compact ? '' : 'px-2 pt-1')}>
-      {/* A mark, not a logo: a 2×2 of squares where one is lit — the product's
-          own "many candidates, one chosen" shape, at 28px. */}
-      <span
-        aria-hidden
-        className="grid size-7 shrink-0 grid-cols-2 gap-[3px] rounded-lg border border-border bg-surface p-[5px] shadow-xs"
-      >
-        <span className="rounded-[1.5px] bg-muted-foreground/25" />
-        <span className="rounded-[1.5px] bg-primary" />
-        <span className="rounded-[1.5px] bg-muted-foreground/25" />
-        <span className="rounded-[1.5px] bg-muted-foreground/25" />
-      </span>
-      <span className="flex min-w-0 flex-col leading-tight">
-        <span className="truncate text-sm font-semibold tracking-tight">專案發想引導</span>
-        <Mono className="truncate text-2xs text-muted-foreground">Ideation Workbench</Mono>
-      </span>
     </div>
   )
 }

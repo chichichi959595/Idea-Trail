@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Optional
 
 from .base import LLMResult, ModelOption, ProviderError
+from .process import communicate, spawn
 
 _CONCURRENCY = asyncio.Semaphore(2)
 _TIMEOUT_SECONDS = 180
@@ -145,26 +146,17 @@ class CodexProvider:
             started = time.monotonic()
             async with _CONCURRENCY:
                 try:
-                    proc = await asyncio.create_subprocess_exec(
-                        *argv,
-                        # Same reason as the claude provider: never leave a
-                        # headless CLI waiting on an stdin it won't get.
-                        stdin=asyncio.subprocess.DEVNULL,
-                        stdout=asyncio.subprocess.PIPE,
-                        stderr=asyncio.subprocess.PIPE,
-                    )
-                    stdout, stderr = await asyncio.wait_for(
-                        proc.communicate(), timeout=_TIMEOUT_SECONDS
-                    )
+                    proc = await spawn(*argv)
+                except FileNotFoundError as exc:
+                    raise ProviderError("codex CLI not found on PATH") from exc
+                try:
+                    stdout, stderr = await communicate(proc, timeout=_TIMEOUT_SECONDS)
                 except asyncio.TimeoutError as exc:
-                    proc.kill()
                     raise ProviderError(
                         f"codex CLI timed out after {_TIMEOUT_SECONDS}s "
                         "(if this machine routes Codex through the ChatGPT desktop "
                         "app's local bridge, make sure that app is running)"
                     ) from exc
-                except FileNotFoundError as exc:
-                    raise ProviderError("codex CLI not found on PATH") from exc
 
             duration_ms = int((time.monotonic() - started) * 1000)
 
@@ -203,20 +195,13 @@ class CodexProvider:
 
     async def health(self) -> dict:
         try:
-            proc = await asyncio.create_subprocess_exec(
-                "codex",
-                "login",
-                "status",
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE,
-            )
+            proc = await spawn("codex", "login", "status")
         except FileNotFoundError as exc:
             return {"ok": False, "detail": str(exc)}
         try:
-            stdout, stderr = await asyncio.wait_for(proc.communicate(), timeout=15)
-        except asyncio.TimeoutError as exc:
             # Otherwise the probe returns and the CLI keeps running unreaped.
-            proc.kill()
+            stdout, stderr = await communicate(proc, timeout=15)
+        except asyncio.TimeoutError as exc:
             return {"ok": False, "detail": str(exc)}
 
         text = (stdout.decode(errors="replace") + stderr.decode(errors="replace")).strip()

@@ -1,7 +1,7 @@
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { toast } from 'sonner'
-import { api } from './api'
+import { api, isStopped } from './api'
 import type { Idea, MethodRecommendation, MethodRun, Session } from './types'
 import { NewSessionForm } from './components/NewSessionForm'
 import { MethodSelectorView } from './components/MethodSelectorView'
@@ -46,6 +46,10 @@ function App() {
   const [runFeedback, setRunFeedback] = useState<string | null>(null)
   const [synthesizing, setSynthesizing] = useState(false)
   const [synthError, setSynthError] = useState<string | null>(null)
+  // True from the moment the stop button is pressed until the call is gone.
+  // The stop is a round-trip of its own (it's what kills the CLI), so it needs
+  // its own state rather than borrowing `answering`.
+  const [stopping, setStopping] = useState(false)
   // Reasoning from whichever call is currently in flight. One field, because
   // only ever one call is running at a time, and it's cleared when the next
   // one starts so stale text never sits under a fresh spinner.
@@ -53,6 +57,10 @@ function App() {
 
   // Appends rather than replaces: the deltas arrive as fragments.
   const collect = (chunk: string) => setThinking((prev) => prev + chunk)
+
+  // Aborts whichever run call is in flight. Held in a ref rather than state
+  // because nothing renders from it — the stop button renders from `answering`.
+  const runAbort = useRef<AbortController | null>(null)
 
   const { data: providersHealth } = useQuery({
     queryKey: ['providers-health'],
@@ -105,13 +113,19 @@ function App() {
     }
   }
 
-  async function handleStartMethod(method: string) {
+  // The settings come from the method screen rather than from this state,
+  // because picking a method by hand doesn't require having run the AI
+  // recommendation — so `provider` here may still be empty when a run starts.
+  async function handleStartMethod(method: string, p: string, m: string, stepM: string) {
     if (!session) return
+    setProvider(p)
+    setModel(m)
+    setStepModel(stepM)
     setStarting(true)
     setRunError(null)
     setRunFeedback(null)
     try {
-      const run = await api.createMethodRun(session.id, method, provider, model, stepModel)
+      const run = await api.createMethodRun(session.id, method, p, m, stepM)
       setActiveRun(run)
       setTab('run')
     } catch (e) {
@@ -123,11 +137,20 @@ function App() {
 
   async function handleAnswer(stepIndex: number, answer: string, force = false) {
     if (!activeRun) return
+    const abort = new AbortController()
+    runAbort.current = abort
     setAnswering(true)
     setRunError(null)
     setThinking('')
     try {
-      const result = await api.answerStep(activeRun.id, stepIndex, answer, force, collect)
+      const result = await api.answerStep(
+        activeRun.id,
+        stepIndex,
+        answer,
+        force,
+        collect,
+        abort.signal,
+      )
       setActiveRun(result.method_run)
       setRunFeedback(result.accepted ? null : result.feedback)
       if (result.ideas) {
@@ -135,29 +158,57 @@ function App() {
         announceIdeas(result.ideas.length)
       }
     } catch (e) {
-      setRunError(e instanceof Error ? e.message : String(e))
+      // A stop isn't a failure: the run is exactly where it was, and the
+      // answer has already gone back to the input box.
+      if (!isStopped(e)) setRunError(e instanceof Error ? e.message : String(e))
     } finally {
+      runAbort.current = null
       setAnswering(false)
+      setStopping(false)
     }
   }
 
   async function handleRetryFinalize() {
     if (!activeRun) return
+    const abort = new AbortController()
+    runAbort.current = abort
     setAnswering(true)
     setRunError(null)
     setThinking('')
     try {
-      const result = await api.retryFinalize(activeRun.id, collect)
+      const result = await api.retryFinalize(activeRun.id, collect, abort.signal)
       setActiveRun(result.method_run)
       if (result.ideas) {
         queryClient.invalidateQueries({ queryKey: ['ideas', session?.id] })
         announceIdeas(result.ideas.length)
       }
     } catch (e) {
-      setRunError(e instanceof Error ? e.message : String(e))
+      if (!isStopped(e)) setRunError(e instanceof Error ? e.message : String(e))
     } finally {
+      runAbort.current = null
       setAnswering(false)
+      setStopping(false)
     }
+  }
+
+  /**
+   * Stop the provider call this run has in flight.
+   *
+   * Both halves matter and in this order: the backend request is the only
+   * thing that can kill the CLI subprocess (a dropped connection goes
+   * unnoticed for the whole length of a call that streams nothing), and the
+   * local abort is what frees the UI without waiting to find out.
+   */
+  async function handleStopRun() {
+    if (!activeRun || !answering) return
+    setStopping(true)
+    try {
+      await api.cancelMethodRun(activeRun.id)
+    } catch {
+      // Nothing to tell the user: the abort below stops the waiting either
+      // way, and a run that's already finished has nothing left to stop.
+    }
+    runAbort.current?.abort()
   }
 
   async function handleSynthesize() {
@@ -280,6 +331,8 @@ function App() {
             error={runError}
             feedback={runFeedback}
             onRetryFinalize={handleRetryFinalize}
+            onStop={handleStopRun}
+            stopping={stopping}
             onGoToIdeas={() => setTab('ideas')}
           />
         )}

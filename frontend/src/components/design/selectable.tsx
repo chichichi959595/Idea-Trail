@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { CheckIcon } from 'lucide-react'
+import { CheckIcon, PlusIcon, XIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 
 /**
@@ -109,13 +109,19 @@ export function Selectable({
 }
 
 /**
- * Pill-shaped multi-select option. One implementation for both the tech/domain
- * chips on the intake form and the manual method picker, which previously had
- * a square-cornered and a rounded version of the same control.
+ * Pill-shaped multi-select option. One implementation for the tech/domain chips
+ * on the intake form and the manual method picker, which previously had a
+ * square-cornered and a rounded version of the same control.
+ *
+ * `indicator` says what clicking it will do rather than only what state it is
+ * in: a chip sitting in the chosen row carries the `×` that removes it, and one
+ * still in the pool carries the `+` that picks it up. That is what lets a
+ * two-part picker (chosen above, pool below) read without instructions.
  */
 export function Chip({
   selected = false,
   disabled = false,
+  indicator = 'check',
   onSelect,
   className,
   children,
@@ -123,6 +129,9 @@ export function Chip({
 }: {
   selected?: boolean
   disabled?: boolean
+  /** `check` ticks a selected chip in place; `remove` / `add` say which way
+   * clicking will move it; `none` leaves it bare. */
+  indicator?: 'check' | 'remove' | 'add' | 'none'
   onSelect?: () => void
   className?: string
   children?: ReactNode
@@ -134,7 +143,7 @@ export function Chip({
       disabled={disabled}
       onClick={onSelect}
       className={cn(
-        'inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-sm font-medium',
+        'group/chip inline-flex h-8 items-center gap-1.5 rounded-full border px-3 text-sm font-medium',
         'transition-[color,background-color,border-color] duration-150',
         'focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none',
         'disabled:cursor-not-allowed disabled:opacity-45',
@@ -145,8 +154,24 @@ export function Chip({
       )}
       {...props}
     >
-      {selected && <CheckIcon className="-ml-0.5 size-3.5" strokeWidth={3} aria-hidden />}
-      {children}
+      {indicator === 'check' && selected && (
+        <CheckIcon className="-ml-0.5 size-3.5" strokeWidth={3} aria-hidden />
+      )}
+      {indicator === 'add' && (
+        <PlusIcon
+          className="-ml-0.5 size-3.5 text-muted-foreground transition-colors group-hover/chip:text-primary"
+          strokeWidth={2.5}
+          aria-hidden
+        />
+      )}
+      <span className="min-w-0 truncate">{children}</span>
+      {indicator === 'remove' && (
+        <XIcon
+          className="-mr-0.5 size-3.5 text-primary/60 transition-colors group-hover/chip:text-primary"
+          strokeWidth={2.5}
+          aria-hidden
+        />
+      )}
     </button>
   )
 }
