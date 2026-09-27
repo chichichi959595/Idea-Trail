@@ -69,6 +69,11 @@ class CodexProvider:
 
     name = "codex"
     label = "Codex"
+    speed_tier = "slow"
+    speed_note = (
+        "走本機 codex CLI，一次呼叫通常數十秒；"
+        "跟 Claude Code 一樣是 agent harness 的額外開銷，不是模型本身慢。"
+    )
 
     @property
     def default_model(self) -> Optional[str]:
@@ -77,6 +82,12 @@ class CodexProvider:
             return configured
         models = self.list_models()
         return models[0].id if models else None
+
+    @property
+    def default_step_model(self) -> Optional[str]:
+        # The cached list is ordered by the account's own priority, not by
+        # speed, so there is no dependable cheaper tier to pick here.
+        return self.default_model
 
     def list_models(self) -> list[ModelOption]:
         models = _cached_models()
@@ -136,6 +147,9 @@ class CodexProvider:
                 try:
                     proc = await asyncio.create_subprocess_exec(
                         *argv,
+                        # Same reason as the claude provider: never leave a
+                        # headless CLI waiting on an stdin it won't get.
+                        stdin=asyncio.subprocess.DEVNULL,
                         stdout=asyncio.subprocess.PIPE,
                         stderr=asyncio.subprocess.PIPE,
                     )

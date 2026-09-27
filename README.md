@@ -28,15 +28,65 @@ backend/    FastAPI + SQLAlchemy，管理 Agent 流程狀態、儲存發想歷�
 
 ### LLM Providers（`backend/app/providers`）
 
-呼叫本機已登入的 CLI 工具，吃既有的訂閱額度，**不使用** API Key：
+三條路線，同一個介面。差別是額度從哪裡來，以及要等多久：
 
-- `claude` — 透過本機的 Claude Code CLI（Claude Pro/Max 訂閱）
-- `codex` — 透過本機的 Codex CLI（ChatGPT Plus/Pro 訂閱）
+| provider | 額度來源 | 速度 |
+| --- | --- | --- |
+| `anthropic` | `ANTHROPIC_API_KEY`（實際計費） | 快，通常幾秒 |
+| `claude` | 本機 Claude Code CLI（Claude Pro/Max 訂閱） | 慢，通常 10~60 秒 |
+| `codex` | 本機 Codex CLI（ChatGPT Plus/Pro 訂閱） | 慢，通常數十秒 |
 
-使用前請確認對應 CLI 已在本機登入（`claude auth status` / `codex login status`）。
+兩個 CLI provider 慢**不是模型慢**，而是 CLI 本身是 agent harness：它會在你的 prompt
+外面再包自己的系統提示與內部迭代，為了一段幾百 token 的答案產生數千個 token，而延遲
+幾乎完全等於輸出 token 數。實測同一個 prompt，CLI 路線的 output token 是 API 路線的
+3~10 倍。方法選擇頁會在這兩張卡片上標「較慢」並說明原因。
 
-兩者都可以再挑模型：方法選擇頁的來源方塊右半邊就是模型下拉選單，選到的模型會一路帶到
-Method Selector、該次 Method Run 的每一步，以及想法整合。`GET /providers/health`
+CLI provider 使用前請確認對應 CLI 已在本機登入（`claude auth status` /
+`codex login status`）；`anthropic` provider 需要後端環境裡有 `ANTHROPIC_API_KEY`：
+
+```bash
+export ANTHROPIC_API_KEY=sk-ant-...
+```
+
+`anthropic` provider 的模型清單是 `claude-opus-5`／`claude-sonnet-5`／
+`claude-haiku-4-5`，預設 `claude-opus-5`。因為這是發想系統、模型的思考深度會直接影響
+產出品質，所以三條路線都**保留 extended thinking**——Opus/Sonnet 走 adaptive thinking，
+Haiku 4.5 走舊的固定 budget 形式。
+
+三者都可以再挑模型，而且**一個 provider 有兩個模型選項**，因為兩種呼叫的難度差一個量級：
+
+- **收斂／推薦**：Method Selector、每次 Method Run 的收斂、想法整合。這是團隊真正帶走的東西。
+- **引導步驟**：每一步的切題性檢查加一兩個想法片段，一次 Run 會跑六次以上。
+
+`anthropic` 預設是 Opus 5 收斂、Sonnet 5 跑步驟。兩個 CLI provider 兩邊都維持原本的預設
+（`claude` 是 sonnet）：往下降一階看起來理所當然，但實測 haiku 透過 CLI 反而**更慢**，
+因為 harness 開銷佔了大頭、不會隨模型變小。想覆寫的話下拉選單兩邊都能各自選。
+選到的組合會寫進 `MethodRun.model` 與 `MethodRun.step_model`，整輪 Run 固定不變。
+
+### 串流
+
+四個會讓人等的呼叫（推薦方法、回答步驟、收斂、整合想法）都有一個 `/stream` 版本，
+用 SSE 把模型的推理邊產生邊送出來。對發想系統來說那段推理本身就是值得讀的內容，
+不只是進度條，所以 `anthropic` provider 的請求刻意帶 `display: "summarized"`。
+
+同一份邏輯只寫一次：每個端點的工作是一個 async generator，
+plain POST 把它抽乾成 JSON、`/stream` 把它轉成 SSE，兩邊不可能走鐘。
+不支援串流的 provider（兩個 CLI）走同一個端點也能用，只會送出單一個 `result` 事件，
+前端不需要知道自己接的是哪一種。
+
+一個要注意的邊界：驗證（stale step_index、找不到 run）在串流開始前就做完，所以還是
+真正的 409／404；但第一個 byte 送出去之後狀態碼已經定了，後面才失敗只能變成一個
+`error` 事件包在 200 裡面，前端把它當致命錯誤處理。
+
+### 呼叫紀錄
+
+`llm_calls` 除了 `duration_ms` 另外記 `api_duration_ms`、`input_tokens`、
+`output_tokens`、`thinking_tokens`。這幾欄不是裝飾：**這幾條路線的延遲幾乎完全等於
+output token 數**，少了它們，log 只能記錄某一通很慢、永遠答不出為什麼慢
+（而且很容易錯怪到 prompt 長度上）。`input_tokens` 是 fresh + cache read + cache write
+的總和 —— 單看 `input_tokens` 會因為幾乎全部命中快取而只有個位數，嚴重低估實際送出的量。
+
+`GET /providers/health`
 會回傳每個 provider 的可用模型清單與預設值 —— Claude 用 CLI 支援的別名
 （sonnet／opus／haiku／fable），Codex 則直接讀本機 `~/.codex/models_cache.json`
 （登入帳號實際能用的清單）與 `config.toml` 指定的預設模型。

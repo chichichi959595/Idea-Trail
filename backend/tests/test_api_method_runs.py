@@ -40,9 +40,56 @@ def test_ideas_land_on_the_session_board(client, session_id, start_run, answer_a
 
 
 def test_run_pins_one_model_for_every_step(client, session_id, provider, start_run, answer_all):
+    """A run must not drift between models partway through — every step call
+    uses the one model the run was opened with."""
     run = start_run()
     answer_all(run)
+    assert {c["model"] for c in provider.step_calls} == {"fake-step-model"}
+
+
+def test_steps_and_convergence_use_their_own_models(
+    client, session_id, provider, start_run, answer_all
+):
+    """The step agents do a relevance check and jot fragments; convergence is
+    what the team actually walks away with. They are separate model picks, and
+    each defaults to the provider's own choice for that role."""
+    run = start_run()
+    assert run["model"] == "fake-model"
+    assert run["step_model"] == "fake-step-model"
+
+    answer_all(run)
+    assert {c["model"] for c in provider.step_calls} == {"fake-step-model"}
+    assert {c["model"] for c in provider.finalize_calls} == {"fake-model"}
+
+
+def test_step_model_can_be_chosen_explicitly(client, session_id, provider, answer_all):
+    """Asking for the deep model on the steps too is allowed — the default is a
+    default, not a cap."""
+    res = client.post(
+        f"/sessions/{session_id}/method-runs",
+        json={
+            "method_name": "pain_point",
+            "provider": "fake",
+            "model": "fake-model",
+            "step_model": "fake-model",
+        },
+    )
+    assert res.status_code == 200, res.text
+    answer_all(res.json())
     assert {c["model"] for c in provider.calls} == {"fake-model"}
+
+
+def test_unknown_step_model_is_rejected_up_front(client, session_id):
+    res = client.post(
+        f"/sessions/{session_id}/method-runs",
+        json={
+            "method_name": "pain_point",
+            "provider": "fake",
+            "step_model": "not-a-real-model",
+        },
+    )
+    assert res.status_code == 400
+    assert "not-a-real-model" in res.json()["detail"]
 
 
 # --------------------------------------------------------------------------

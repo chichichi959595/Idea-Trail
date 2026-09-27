@@ -23,6 +23,27 @@ _MODELS = [
 _DEFAULT_MODEL = "sonnet"
 
 
+def _usage_figures(payload: dict) -> dict:
+    """Token counts out of the CLI's own usage report.
+
+    `input_tokens` on its own is misleading here: almost all of the input is
+    served from cache, so the field reads as a handful of tokens while the model
+    is really being sent thousands. Summing the three is what compares to the
+    prompt that was actually sent.
+    """
+    usage = payload.get("usage") or {}
+    details = usage.get("output_tokens_details") or {}
+    fresh = usage.get("input_tokens") or 0
+    cached_read = usage.get("cache_read_input_tokens") or 0
+    cached_write = usage.get("cache_creation_input_tokens") or 0
+    return {
+        "input_tokens": fresh + cached_read + cached_write or None,
+        "output_tokens": usage.get("output_tokens"),
+        "thinking_tokens": details.get("thinking_tokens"),
+        "api_duration_ms": payload.get("duration_api_ms"),
+    }
+
+
 def _model_actually_used(model_usage: Optional[dict], requested: str) -> str:
     """Which model really produced the answer, per the CLI's own usage report.
 
@@ -36,7 +57,10 @@ def _model_actually_used(model_usage: Optional[dict], requested: str) -> str:
 
     for name, usage in model_usage.items():
         canonical = (usage or {}).get("canonicalModel") or name
-        if requested in canonical:
+        # Either direction: "sonnet" matches "claude-sonnet-5", and a fully
+        # dated id like "claude-haiku-4-5-20251001" matches the shorter
+        # canonical "claude-haiku-4-5" it reports.
+        if requested in canonical or canonical in requested:
             return name
 
     return max(
@@ -54,9 +78,23 @@ class ClaudeCodeProvider:
 
     name = "claude"
     label = "Claude Code"
+    speed_tier = "slow"
+    speed_note = (
+        "走本機 claude CLI，一次呼叫通常 10~60 秒："
+        "CLI 是 agent harness，會自己加上系統提示與內部迭代，"
+        "為了一段短答案產生數千個 token。思考品質不輸 API，就是慢。"
+    )
 
     @property
     def default_model(self) -> str:
+        return _DEFAULT_MODEL
+
+    @property
+    def default_step_model(self) -> str:
+        # Deliberately the same model. Stepping down to haiku is the obvious
+        # move and it measured *slower* through this CLI, not faster — the
+        # harness overhead dominates and does not shrink with the model. The
+        # picker still lets a run override this per role.
         return _DEFAULT_MODEL
 
     def list_models(self) -> list[ModelOption]:
@@ -81,6 +119,9 @@ class ClaudeCodeProvider:
             "--tools",
             "",
             "--no-session-persistence",
+            # No tools are in play, so booting this machine's MCP servers only
+            # costs startup time (~2s per call).
+            "--strict-mcp-config",
         ]
         if json_schema is not None:
             argv += ["--json-schema", json.dumps(json_schema)]
@@ -95,6 +136,9 @@ class ClaudeCodeProvider:
             try:
                 proc = await asyncio.create_subprocess_exec(
                     *argv,
+                    # Without this the CLI blocks ~3s per call waiting for
+                    # stdin it is never given ("no stdin data received in 3s").
+                    stdin=asyncio.subprocess.DEVNULL,
                     stdout=asyncio.subprocess.PIPE,
                     stderr=asyncio.subprocess.PIPE,
                 )
@@ -134,6 +178,7 @@ class ClaudeCodeProvider:
             cost_usd=payload.get("total_cost_usd"),
             duration_ms=duration_ms,
             raw=raw,
+            **_usage_figures(payload),
         )
 
     async def health(self) -> dict:

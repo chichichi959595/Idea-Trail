@@ -3,11 +3,13 @@ from __future__ import annotations
 from dataclasses import asdict
 from typing import Dict, Optional
 
+from .anthropic_api import AnthropicAPIProvider
 from .base import LLMProvider, ModelOption
 from .claude_code import ClaudeCodeProvider
 from .codex import CodexProvider
 
 _PROVIDERS: Dict[str, LLMProvider] = {
+    "anthropic": AnthropicAPIProvider(),
     "claude": ClaudeCodeProvider(),
     "codex": CodexProvider(),
 }
@@ -26,6 +28,14 @@ def list_models(name: str) -> list[ModelOption]:
     return get_provider(name).list_models()
 
 
+def _validate_model(provider_name: str, model: str) -> str:
+    options = get_provider(provider_name).list_models()
+    if options and all(m.id != model for m in options):
+        known = ", ".join(m.id for m in options)
+        raise ValueError(f"unknown model {model!r} for provider {provider_name!r} (available: {known})")
+    return model
+
+
 def resolve_model(provider_name: str, model: Optional[str]) -> Optional[str]:
     """Turn a requested model into one this provider will actually accept.
 
@@ -33,15 +43,17 @@ def resolve_model(provider_name: str, model: Optional[str]) -> Optional[str]:
     be in the provider's catalog — otherwise the CLI would fail much later,
     mid-run, with a message the user can't act on.
     """
-    provider = get_provider(provider_name)
     if not model:
-        return provider.default_model
+        return get_provider(provider_name).default_model
+    return _validate_model(provider_name, model)
 
-    options = provider.list_models()
-    if options and all(m.id != model for m in options):
-        known = ", ".join(m.id for m in options)
-        raise ValueError(f"unknown model {model!r} for provider {provider_name!r} (available: {known})")
-    return model
+
+def resolve_step_model(provider_name: str, model: Optional[str]) -> Optional[str]:
+    """Same, for the per-step agents — falling back to the provider's own step
+    default rather than to its headline model."""
+    if not model:
+        return get_provider(provider_name).default_step_model
+    return _validate_model(provider_name, model)
 
 
 async def health_report() -> dict:
@@ -51,5 +63,8 @@ async def health_report() -> dict:
         entry["label"] = provider.label
         entry["models"] = [asdict(m) for m in provider.list_models()]
         entry["default_model"] = provider.default_model
+        entry["default_step_model"] = provider.default_step_model
+        entry["speed_tier"] = provider.speed_tier
+        entry["speed_note"] = provider.speed_note
         report[name] = entry
     return report

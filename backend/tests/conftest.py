@@ -22,10 +22,8 @@ from app.db.models import Base
 from app.db.session import get_db
 from app.main import app
 from app.providers import registry
-from app.providers.base import LLMResult, ModelOption
+from app.providers.base import LLMResult, ModelOption, StreamEvent
 
-# Long enough that the quality guard doesn't read them as placeholder filler
-# and silently double every call.
 DEFAULT_STEP_OUTPUT = {
     "is_relevant": True,
     "clarification": "",
@@ -46,6 +44,8 @@ class FakeProvider:
 
     name = "fake"
     label = "Fake Provider"
+    speed_tier = "fast"
+    speed_note = "測試用，不會真的呼叫任何東西。"
 
     def __init__(self) -> None:
         self.calls: list[dict] = []
@@ -57,8 +57,17 @@ class FakeProvider:
     def default_model(self) -> str:
         return "fake-model"
 
+    @property
+    def default_step_model(self) -> str:
+        # A different id from default_model on purpose, so the tests can tell
+        # the two roles apart instead of both reading as "fake-model".
+        return "fake-step-model"
+
     def list_models(self) -> list[ModelOption]:
-        return [ModelOption("fake-model", "Fake Model", "測試用")]
+        return [
+            ModelOption("fake-model", "Fake Model", "測試用"),
+            ModelOption("fake-step-model", "Fake Step Model", "測試用，步驟專用"),
+        ]
 
     @property
     def step_calls(self) -> list[dict]:
@@ -98,10 +107,34 @@ class FakeProvider:
         return {"ok": True}
 
 
+class FakeStreamingProvider(FakeProvider):
+    """A provider that also implements `stream`, so the SSE endpoints can be
+    tested against something that really emits deltas. Providers without a
+    `stream` method go down the single-result path instead, and both are
+    exercised."""
+
+    name = "fake-streaming"
+    label = "Fake Streaming Provider"
+
+    thinking_chunks = ["先看他們寫的限制條件，", "再對照方法目錄。"]
+
+    async def stream(self, **kwargs):
+        for chunk in self.thinking_chunks:
+            yield StreamEvent("thinking", text=chunk)
+        yield StreamEvent("result", result=await self.complete(**kwargs))
+
+
 @pytest.fixture
 def provider(monkeypatch) -> FakeProvider:
     fake = FakeProvider()
     monkeypatch.setitem(registry._PROVIDERS, "fake", fake)
+    return fake
+
+
+@pytest.fixture
+def streaming_provider(monkeypatch) -> FakeStreamingProvider:
+    fake = FakeStreamingProvider()
+    monkeypatch.setitem(registry._PROVIDERS, "fake-streaming", fake)
     return fake
 
 

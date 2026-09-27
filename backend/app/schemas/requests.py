@@ -21,7 +21,10 @@ class CreateMethodRunRequest(BaseModel):
     method_name: str
     provider: str = "claude"
     model: Optional[str] = None
-    """None = the provider's own default model."""
+    """Model for the convergence call. None = the provider's own default."""
+    step_model: Optional[str] = None
+    """Model for the per-step agents. None = the provider's own step default,
+    which is a tier below `model` where the provider offers one."""
 
 
 class AnswerStepRequest(BaseModel):

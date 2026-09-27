@@ -48,6 +48,7 @@ def method_run_to_dict(run: MethodRun, *, include_steps: bool = True) -> dict:
         "method_name": run.method_name,
         "provider": run.provider,
         "model": run.model,
+        "step_model": run.step_model,
         "status": run.status,
         "current_step_index": run.current_step_index,
         "started_at": run.started_at.isoformat(),

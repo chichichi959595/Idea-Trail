@@ -63,6 +63,11 @@ class MethodRun(Base):
     method_name: Mapped[str] = mapped_column(String(50))
     provider: Mapped[str] = mapped_column(String(20))
     model: Mapped[Optional[str]] = mapped_column(String(100), default=None)
+    """The model for this run's convergence call — the one whose reasoning
+    decides what the team walks away with."""
+    step_model: Mapped[Optional[str]] = mapped_column(String(100), default=None)
+    """The model for this run's per-step agents. None falls back to `model`,
+    which is what every run created before this column existed did."""
     status: Mapped[str] = mapped_column(String(20), default="running")
     current_step_index: Mapped[int] = mapped_column(default=0)
     started_at: Mapped[dt.datetime] = mapped_column(default=_now)
@@ -128,4 +133,13 @@ class LLMCall(Base):
     structured_json: Mapped[Optional[dict]] = mapped_column(JSON, default=None)
     cost_usd: Mapped[Optional[float]] = mapped_column(default=None)
     duration_ms: Mapped[Optional[int]] = mapped_column(default=None)
+    """Wall clock, start to finish."""
+    api_duration_ms: Mapped[Optional[int]] = mapped_column(default=None)
+    """Of that, the part the provider attributes to the model call itself.
+    The gap between the two is process/harness overhead."""
+    input_tokens: Mapped[Optional[int]] = mapped_column(default=None)
+    output_tokens: Mapped[Optional[int]] = mapped_column(default=None)
+    """The number to look at first when a call was slow — on every provider
+    here, latency tracks generated tokens, not prompt length."""
+    thinking_tokens: Mapped[Optional[int]] = mapped_column(default=None)
     created_at: Mapped[dt.datetime] = mapped_column(default=_now)

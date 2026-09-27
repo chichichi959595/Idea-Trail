@@ -3,6 +3,9 @@ name = "idea-workbench-backend"
 version = "0.1.0"
 requires-python = ">=3.11"
 dependencies = [
+    # Used only by the "anthropic" provider (direct Messages API calls). The
+    # two CLI providers shell out and need nothing installed here.
+    "anthropic>=1.0",
     "fastapi>=0.115",
     "pydantic>=2.9",
     "python-multipart>=0.0.9",

@@ -44,7 +44,10 @@ export interface MethodRun {
   session_id: number
   method_name: string
   provider: string
+  /** Model for this run's convergence call. */
   model: string | null
+  /** Model for this run's per-step agents; null = same as `model`. */
+  step_model: string | null
   status: 'running' | 'done' | 'failed'
   /** 'failed' = every step was answered but the convergence call produced no
    * ideas. The answers are all still there; only the last call needs replaying. */
@@ -79,24 +82,38 @@ export interface ProviderHealth {
   models?: ModelOption[]
   /** Used when the user doesn't pick one; null = let the CLI decide. */
   default_model?: string | null
+  /** This provider's own pick for the per-step agents — a tier below
+   * default_model where it has one to step down to. */
+  default_step_model?: string | null
+  /** 'slow' routes through a coding-agent CLI; 'fast' calls the API directly. */
+  speed_tier?: 'fast' | 'slow'
+  /** One sentence on what that tradeoff costs, shown on the card. */
+  speed_note?: string
   detail?: string
   [key: string]: unknown
 }
 
-export interface ProvidersHealth {
-  claude: ProviderHealth
-  codex: ProviderHealth
-}
+export type ProvidersHealth = Record<ProviderId, ProviderHealth>
 
-export const PROVIDER_IDS = ['claude', 'codex'] as const
+export const PROVIDER_IDS = ['anthropic', 'claude', 'codex'] as const
 export type ProviderId = (typeof PROVIDER_IDS)[number]
 
 export const PROVIDER_LABELS: Record<ProviderId, string> = {
+  anthropic: 'Anthropic API',
   claude: 'Claude Code',
   codex: 'Codex',
 }
 
+/** What to do when a provider reports itself unavailable. The CLI routes need
+ * a terminal login; the API route needs a key in the backend's environment. */
+export const PROVIDER_UNAVAILABLE_HINTS: Record<ProviderId, string> = {
+  anthropic: '後端沒有可用的 ANTHROPIC_API_KEY，設好之後重啟後端再重新整理。',
+  claude: '這台機器沒有登入 Claude Code，先在終端機登入後重新整理。',
+  codex: '這台機器沒有登入 Codex，先在終端機登入後重新整理。',
+}
+
 export const PROVIDER_TAGLINES: Record<ProviderId, string> = {
+  anthropic: 'ANTHROPIC_API_KEY 計費，直接呼叫 API',
   claude: '本機 Claude Code 訂閱額度',
   codex: '本機 ChatGPT / Codex 訂閱額度',
 }

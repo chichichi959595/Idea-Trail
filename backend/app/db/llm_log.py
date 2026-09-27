@@ -29,6 +29,10 @@ def log_llm_call(
         structured_json=result.structured,
         cost_usd=result.cost_usd,
         duration_ms=result.duration_ms,
+        api_duration_ms=result.api_duration_ms,
+        input_tokens=result.input_tokens,
+        output_tokens=result.output_tokens,
+        thinking_tokens=result.thinking_tokens,
     )
     db.add(call)
     db.flush()

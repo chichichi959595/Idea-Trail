@@ -9,8 +9,6 @@ from app.agents.framework import (
 )
 from app.db.models import IdeationSession
 from app.providers.base import LLMResult
-from app.providers.quality import complete_with_quality_guard
-from app.providers.registry import get_provider
 
 RECOMMENDATION_COUNT = 3
 """How many methods the team is always shown.
@@ -124,6 +122,17 @@ def finalize_selection(
 
 
 @dataclass
+class SelectorPrompt:
+    """Everything the selector call needs, and everything needed to make sense
+    of its answer — separated from the call itself so the caller can stream it."""
+
+    system_prompt: str
+    user_prompt: str
+    schema: dict
+    rule_ranking: list[str]
+
+
+@dataclass
 class Recommendation:
     methods: list[str]
     """Final ranking actually shown to the team."""
@@ -143,11 +152,7 @@ def _render_catalog() -> str:
     return "\n".join(f"- {m}（{labels[m]}）：{descriptions[m]}" for m in METHOD_ORDER)
 
 
-async def recommend(
-    session: IdeationSession,
-    provider_name: str = "claude",
-    model: str | None = None,
-) -> Recommendation:
+def build_prompt(session: IdeationSession) -> SelectorPrompt:
     scores = score_methods(session)
     suggestion = rank_methods(session)
     labels, descriptions = method_labels(), method_descriptions()
@@ -179,26 +184,26 @@ async def recommend(
         f"每個附上針對這個團隊的推薦理由，並在 adjustment 說明你的選擇與參考排序的差異。"
     )
 
-    system_prompt = SELECTOR_SYSTEM_PROMPT.format(count=RECOMMENDATION_COUNT)
-    provider = get_provider(provider_name)
-    result = await complete_with_quality_guard(
-        provider,
-        system_prompt=system_prompt,
+    return SelectorPrompt(
+        system_prompt=SELECTOR_SYSTEM_PROMPT.format(count=RECOMMENDATION_COUNT),
         user_prompt=user_prompt,
-        json_schema=_selector_schema(),
-        model=model,
+        schema=_selector_schema(),
+        rule_ranking=suggestion,
     )
 
+
+def interpret(prompt: SelectorPrompt, result: LLMResult) -> Recommendation:
+    """Turn the model's answer into the recommendation actually shown."""
     structured = result.structured or {}
     items = [i for i in (structured.get("items") or []) if isinstance(i, dict) and "method" in i]
-    methods = finalize_selection([i["method"] for i in items], suggestion)
+    methods = finalize_selection([i["method"] for i in items], prompt.rule_ranking)
 
     return Recommendation(
         methods=methods,
         rationale_by_method={i["method"]: i.get("rationale", "") for i in items},
-        rule_ranking=suggestion,
+        rule_ranking=prompt.rule_ranking,
         adjustment_note=structured.get("adjustment", ""),
-        system_prompt=system_prompt,
-        user_prompt=user_prompt,
+        system_prompt=prompt.system_prompt,
+        user_prompt=prompt.user_prompt,
         result=result,
     )
