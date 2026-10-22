@@ -11,36 +11,27 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Textarea } from '@/components/ui/textarea'
 import { Chip, SegmentedControl } from '@/components/design/selectable'
-import { Divider, SectionHeader } from '@/components/design/section'
+import { Divider } from '@/components/design/section'
 import { Eyebrow } from '@/components/design/typography'
 
 /**
- * The team's own answers, as a controlled block.
+ * The team's own answers, as controlled blocks — one per page of the setup
+ * screen's tabbed panel.
  *
- * Controlled rather than self-owning, because this now sits on a screen the
- * user leaves and comes back to: the draft belongs to the session above it, so
- * it survives a trip to the idea wall and back.
+ * Controlled rather than self-owning, because this sits on a screen the user
+ * leaves and comes back to: the draft belongs to the session above it, so it
+ * survives a trip to the idea wall and back — and, now that the form is split
+ * across tabs, a trip to another tab too.
  */
-export function SessionIntake({
-  value,
-  onChange,
-}: {
+interface IntakeProps {
   value: Intake
   onChange: (patch: Partial<Intake>) => void
-}) {
-  const toggle = (list: string[], key: 'techSelected' | 'domainSelected', opt: string) =>
-    onChange({
-      [key]: list.includes(opt) ? list.filter((o) => o !== opt) : [...list, opt],
-    } as Partial<Intake>)
+}
 
+/** Who's on the team: how many, how long they have, what they can build. */
+export function TeamFields({ value, onChange }: IntakeProps) {
   return (
-    <div className="flex flex-col gap-7">
-      <SectionHeader
-        eyebrow="01"
-        title="團隊現在的狀況"
-        description="這些資訊只用來挑方法，填得粗略也沒關係，之後想改隨時可以回來改。"
-      />
-
+    <div className="flex flex-col gap-6">
       <div className="grid grid-cols-1 gap-5 sm:grid-cols-2">
         <Field label="團隊人數">
           <Input
@@ -65,19 +56,26 @@ export function SessionIntake({
           label="技術背景"
           options={TECH_OPTIONS}
           selected={value.techSelected}
-          onToggle={(opt) => toggle(value.techSelected, 'techSelected', opt)}
+          onToggle={(opt) => onChange({ techSelected: toggled(value.techSelected, opt) })}
           onClear={() => onChange({ techSelected: [], techOther: '' })}
           otherValue={value.techOther}
           onOtherChange={(v) => onChange({ techOther: v })}
         />
       </Field>
+    </div>
+  )
+}
 
+/** Where they'd like to end up, and what rules some places out. */
+export function DirectionFields({ value, onChange }: IntakeProps) {
+  return (
+    <div className="flex flex-col gap-6">
       <Field label="領域偏好" hint="可多選" group>
         <ChipGroup
           label="領域偏好"
           options={DOMAIN_OPTIONS}
           selected={value.domainSelected}
-          onToggle={(opt) => toggle(value.domainSelected, 'domainSelected', opt)}
+          onToggle={(opt) => onChange({ domainSelected: toggled(value.domainSelected, opt) })}
           onClear={() => onChange({ domainSelected: [], domainOther: '' })}
           otherValue={value.domainOther}
           onOtherChange={(v) => onChange({ domainOther: v })}
@@ -92,41 +90,50 @@ export function SessionIntake({
           onChange={(e) => onChange({ constraints: e.target.value })}
         />
       </Field>
-
-      <div className="flex flex-col gap-1">
-        <SectionHeader
-          title="你們的起點"
-          description="有沒有既有的問題或題目，會直接改變適合的發想方法。"
-          className="pb-3"
-        />
-
-        <TriChoice
-          label="已經有明確想解決的問題？"
-          value={value.hasClearProblem}
-          onChange={(v) => onChange({ hasClearProblem: v })}
-          followUp={{
-            label: '那個問題是什麼？',
-            placeholder: '例如：系上的二手書買賣都靠社群貼文，買賣雙方很難對上',
-            value: value.clearProblemText,
-            onChange: (v) => onChange({ clearProblemText: v }),
-          }}
-        />
-        <Divider />
-        <TriChoice
-          label="有既有產品／題目想改造？"
-          value={value.hasExistingProduct}
-          onChange={(v) => onChange({ hasExistingProduct: v })}
-          followUp={{
-            label: '想改造的是什麼？',
-            placeholder: '例如：去年的社團報名網站，現在流程太繞',
-            value: value.existingProductText,
-            onChange: (v) => onChange({ existingProductText: v }),
-          }}
-        />
-      </div>
     </div>
   )
 }
+
+/** What they already have in hand. This is the page that decides where the
+ * screen's primary action goes next. `problemNotice` hangs under the pain
+ * point's text box — the check's verdict when it sends the team back. */
+export function StartingPointFields({
+  value,
+  onChange,
+  problemNotice,
+}: IntakeProps & { problemNotice?: React.ReactNode }) {
+  return (
+    <div className="flex flex-col">
+      <TriChoice
+        label="已經有明確想解決的痛點？"
+        value={value.hasClearProblem}
+        onChange={(v) => onChange({ hasClearProblem: v })}
+        followUp={{
+          label: '那個痛點是什麼？',
+          placeholder: '例如：系上的二手書買賣都靠社群貼文，買賣雙方很難對上',
+          value: value.clearProblemText,
+          onChange: (v) => onChange({ clearProblemText: v }),
+          notice: problemNotice,
+        }}
+      />
+      <Divider />
+      <TriChoice
+        label="有既有產品／題目想改造？"
+        value={value.hasExistingProduct}
+        onChange={(v) => onChange({ hasExistingProduct: v })}
+        followUp={{
+          label: '想改造的是什麼？',
+          placeholder: '例如：去年的社團報名網站，現在流程太繞',
+          value: value.existingProductText,
+          onChange: (v) => onChange({ existingProductText: v }),
+        }}
+      />
+    </div>
+  )
+}
+
+const toggled = (list: string[], opt: string) =>
+  list.includes(opt) ? list.filter((o) => o !== opt) : [...list, opt]
 
 /**
  * Label + optional hint above a control.
@@ -268,6 +275,7 @@ interface FollowUp {
   placeholder: string
   value: string
   onChange: (v: string) => void
+  notice?: React.ReactNode
 }
 
 /**
@@ -314,6 +322,7 @@ function TriChoice({
             value={followUp.value}
             onChange={(e) => followUp.onChange(e.target.value)}
           />
+          {followUp.notice}
         </div>
       )}
     </div>

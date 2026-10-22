@@ -130,6 +130,23 @@
   --sidebar-primary: var(--brand);
   --sidebar-primary-foreground: var(--brand-foreground);
   --sidebar-ring: var(--ring);
+
+  /* Idea-library graph: the first three categorical slots, the most that
+     stay CVD-separable when every pair of dots can sit side by side.
+     Validated all-pairs against this surface; slot 3 is under 3:1, which is
+     why every dot gets a label on hover and the graph has a list view. */
+  --series-1: #2a78d6;
+  --series-2: #eb6834;
+  --series-3: #1baf7a;
+  --series-other: oklch(0.62 0.01 265);
+
+  /* QR card on the 多人接龍 host screen. Deliberately NOT redefined under
+     .dark: phone cameras read a light-on-dark code far less reliably, so the
+     card stays dark-on-white in both themes. */
+  --qr-surface: oklch(1 0 0);
+  --qr-foreground: oklch(0.21 0.014 265);
+  --qr-muted-foreground: oklch(0.525 0.014 265);
+  --qr-border: oklch(0.915 0.005 265);
 }
 
 .dark {
@@ -216,6 +233,12 @@
   --sidebar-primary: var(--brand);
   --sidebar-primary-foreground: var(--brand-foreground);
   --sidebar-ring: var(--ring);
+
+  /* Idea-library graph, re-validated against the dark surface. */
+  --series-1: #3987e5;
+  --series-2: #d95926;
+  --series-3: #199e70;
+  --series-other: oklch(0.6 0.01 265);
 }
 
 /* ==========================================================================
@@ -288,6 +311,11 @@
   --color-sidebar-primary: var(--sidebar-primary);
   --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
   --color-sidebar-ring: var(--sidebar-ring);
+
+  --color-qr-surface: var(--qr-surface);
+  --color-qr-foreground: var(--qr-foreground);
+  --color-qr-muted-foreground: var(--qr-muted-foreground);
+  --color-qr-border: var(--qr-border);
 
   /* --- Radius scale ---------------------------------------------------- */
   --radius-xs: calc(var(--radius) - 5px);
@@ -656,4 +684,25 @@
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
   }
+}
+
+/* Set by ThemeProvider for the one frame in which the `.dark` class flips, so
+   every colour changes at once instead of the transitioned ones trailing. */
+.theme-switching,
+.theme-switching *,
+.theme-switching *::before,
+.theme-switching *::after {
+  transition: none !important;
+}
+
+/* Theme reveal (see ThemeProvider). The default view transition crossfades
+   old and new; turn that off so the only motion is the circular clip-path
+   animated from script, and keep the new page on top of the old one. */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+::view-transition-new(root) {
+  z-index: 1;
 }

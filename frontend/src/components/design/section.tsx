@@ -45,17 +45,43 @@ export function Page({ className, children, ...props }: React.ComponentProps<'di
  * Here the footer is simply outside the scroll container and cannot move at all.
  */
 
-const ScreenContext = createContext<{ overflowing: boolean; report: (v: boolean) => void }>({
+/**
+ * Every screen sits in the same frame, so a title lands in the same spot
+ * whichever screen it heads — the flow's four steps and the two libraries
+ * alike. Inside the frame, an ordinary screen keeps to a narrower reading
+ * column, left-aligned so it starts under the title; a `wide` screen (a
+ * graph, a table) fills the frame.
+ */
+const FRAME = 'mx-auto w-full max-w-6xl'
+const COLUMN = 'w-full max-w-4xl'
+
+const ScreenContext = createContext<{
+  overflowing: boolean
+  report: (v: boolean) => void
+  wide: boolean
+}>({
   overflowing: false,
   report: () => {},
+  wide: false,
 })
 
-export function Screen({ className, children, ...props }: React.ComponentProps<'div'>) {
+export function Screen({
+  className,
+  children,
+  wide = false,
+  ...props
+}: React.ComponentProps<'div'> & {
+  /** Use the whole frame rather than the reading column. */
+  wide?: boolean
+}) {
   // Whether the body actually scrolls. The footer's hairline exists to stop
   // content disappearing *under* it — so when nothing scrolls there is nothing
   // for it to separate, and drawing it anyway just cuts the screen in two.
   const [overflowing, setOverflowing] = useState(false)
-  const value = useMemo(() => ({ overflowing, report: setOverflowing }), [overflowing])
+  const value = useMemo(
+    () => ({ overflowing, report: setOverflowing, wide }),
+    [overflowing, wide],
+  )
 
   return (
     <ScreenContext.Provider value={value}>
@@ -96,6 +122,7 @@ export function ScreenHeader({
   children?: ReactNode
   className?: string
 }) {
+  const { wide } = useContext(ScreenContext)
   return (
     <div
       className={cn(
@@ -103,40 +130,64 @@ export function ScreenHeader({
         className,
       )}
     >
-      <div className="mx-auto flex w-full max-w-4xl flex-col gap-3">
-        <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-2">
-          <div className="flex min-w-0 flex-col gap-1">
-            <Title className="text-2xl sm:text-3xl">{title}</Title>
-            {/* One line, always. The headers are only the same height across
-                screens if the description can't become two. */}
-            {description && <Small className="line-clamp-1 text-xs">{description}</Small>}
+      {/* The title starts at the column's edge on every screen; the frame
+          here is a plain block (not a flex container), so the inner column
+          centers with ordinary `mx-auto` + `max-width` instead of flex's
+          cross-axis auto-margin rule, which would shrink it to fit its
+          content instead of stretching it to the column width. */}
+      <div className={FRAME}>
+        <div className={cn('flex flex-col gap-3', !wide && 'mx-auto max-w-4xl')}>
+          <div className="flex flex-wrap items-end justify-between gap-x-6 gap-y-2">
+            <div className="flex min-w-0 flex-col gap-1">
+              <Title className="text-2xl sm:text-3xl">{title}</Title>
+              {/* One line, always. The headers are only the same height across
+                  screens if the description can't become two. */}
+              {description && <Small className="line-clamp-1 text-xs">{description}</Small>}
+            </div>
+            {/* Counts first, the action last: the screen's action button ends on
+                the column's right edge, which is where the footer's primary
+                button ends too. With the count after it, the header button sat
+                60px short of the one below it. */}
+            <div className="flex shrink-0 items-center gap-3">
+              {meta}
+              {actions}
+            </div>
           </div>
-          {/* Counts first, the action last: the screen's action button ends on
-              the column's right edge, which is where the footer's primary
-              button ends too. With the count after it, the header button sat
-              60px short of the one below it. */}
-          <div className="flex shrink-0 items-center gap-3">
-            {meta}
-            {actions}
-          </div>
+          {children}
         </div>
-        {children}
       </div>
     </div>
   )
 }
 
-/** The scrolling part of a `Screen`. Carries the gutters and the column width. */
-export function ScreenBody({ className, children, ...props }: React.ComponentProps<'div'>) {
-  const { report } = useContext(ScreenContext)
+/** The scrolling part of a `Screen`. Carries the gutters and the column width.
+ *
+ * `fill` is for a screen whose content is one big surface (a graph, a table):
+ * the body is sized to the viewport instead of to its content, so the page
+ * itself stops scrolling and a `flex-1 min-h-0` child takes whatever height is
+ * left and scrolls inside itself. The body still scrolls as a fallback when
+ * the window is shorter than that child's minimum height. */
+export function ScreenBody({
+  className,
+  children,
+  fill = false,
+  ...props
+}: React.ComponentProps<'div'> & { fill?: boolean }) {
+  const { report, wide } = useContext(ScreenContext)
   const scroller = useRef<HTMLDivElement>(null)
   const content = useRef<HTMLDivElement>(null)
+  // Width of one of the two gutters the scroller reserves — 0 with overlay
+  // scrollbars, half a classic scrollbar otherwise.
+  const [gutter, setGutter] = useState(0)
 
   useEffect(() => {
     const el = scroller.current
     const inner = content.current
     if (!el || !inner) return
-    const measure = () => report(el.scrollHeight - el.clientHeight > 1)
+    const measure = () => {
+      report(el.scrollHeight - el.clientHeight > 1)
+      setGutter((el.offsetWidth - el.clientWidth) / 2)
+    }
     measure()
     // Both: the viewport resizing, and the content growing inside it (a new
     // idea, an expanded rationale).
@@ -147,13 +198,44 @@ export function ScreenBody({ className, children, ...props }: React.ComponentPro
   }, [report])
 
   return (
-    <div ref={scroller} className="min-h-0 flex-1 overflow-y-auto">
+    // `both-edges`, not plain `stable`. The header and footer live outside
+    // this scroller and never lose width to a scrollbar; a gutter reserved on
+    // the right only narrows this box on one side, so the centred column
+    // below sat half a scrollbar (5–8px) left of the title above it whenever
+    // the platform draws classic scrollbars. Reserving the same width on both
+    // edges keeps the centre — and so the column's left edge — where the
+    // header's is.
+    <div
+      ref={scroller}
+      className="min-h-0 flex-1 overflow-y-auto [scrollbar-gutter:stable_both-edges]"
+    >
+      {/* The same box as the header's and the footer's: gutter padding
+          outside, `FRAME` inside. With the padding inside the frame instead,
+          the body's max width took the padding out of it and a wide window
+          drew the table 32px in from the title on each side. The padding also
+          gives back what the scroller's gutters took, so the edges line up
+          with classic scrollbars too. */}
       <div
         ref={content}
-        className={cn('mx-auto flex w-full max-w-4xl flex-col px-5 py-8 sm:px-8 sm:py-10', className)}
-        {...props}
+        style={{ '--gutter': `${gutter}px` } as React.CSSProperties}
+        className={cn(
+          'px-[calc(1.25rem-var(--gutter))] py-8 sm:px-[calc(2rem-var(--gutter))] sm:py-10',
+          fill && 'flex h-full flex-col',
+        )}
       >
-        {children}
+        <div className={cn(FRAME, fill && 'flex min-h-0 flex-1 flex-col')}>
+          <div
+            className={cn(
+              'flex flex-col',
+              !wide && cn(COLUMN, 'mx-auto'),
+              fill && 'min-h-0 flex-1',
+              className,
+            )}
+            {...props}
+          >
+            {children}
+          </div>
+        </div>
       </div>
     </div>
   )
@@ -162,7 +244,7 @@ export function ScreenBody({ className, children, ...props }: React.ComponentPro
 /** Status on the left, the primary action on the right. Never scrolls; grows a
  * hairline only once there is scrolled content to separate itself from. */
 export function ScreenFooter({ className, children, ...props }: React.ComponentProps<'div'>) {
-  const { overflowing } = useContext(ScreenContext)
+  const { overflowing, wide } = useContext(ScreenContext)
   return (
     <div
       className={cn(
@@ -172,8 +254,15 @@ export function ScreenFooter({ className, children, ...props }: React.ComponentP
       )}
       {...props}
     >
-      <div className="mx-auto flex w-full max-w-4xl flex-wrap items-center justify-between gap-x-6 gap-y-3">
-        {children}
+      <div className={FRAME}>
+        <div
+          className={cn(
+            'flex flex-wrap items-center justify-between gap-x-6 gap-y-3',
+            !wide && cn(COLUMN, 'mx-auto'),
+          )}
+        >
+          {children}
+        </div>
       </div>
     </div>
   )

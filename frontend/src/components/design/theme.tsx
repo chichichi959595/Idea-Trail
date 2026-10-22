@@ -1,31 +1,38 @@
-import { MonitorIcon, MoonIcon, SunIcon } from 'lucide-react'
+import { MoonIcon, SunIcon } from 'lucide-react'
 import { useTheme } from './theme-provider'
-import { SegmentedControl } from './selectable'
+import { Button } from '@/components/ui/button'
+import { cn } from '@/lib/utils'
 
 /**
- * Light / dark / follow-system, as a segmented control rather than a two-state
- * toggle — "follow the system" has to be reachable, or the app fights the OS
- * for anyone who switches at sunset.
+ * Light / dark, as a single toggle button. The first visit starts from the
+ * OS setting; one click flips between the two looks from then on, with the
+ * new theme spreading out from the button as a circle.
  *
  * `ThemeProvider` owns the class on `<html>`; the token layer in index.css
  * does the rest.
  */
 export function ThemeControl({ className }: { className?: string }) {
   const { theme, setTheme } = useTheme()
+  const isDark = theme === 'dark'
 
   return (
-    <SegmentedControl
-      aria-label="外觀"
-      value={theme}
-      onChange={setTheme}
-      // No width opinion of its own: the rail stretches it across the column,
-      // the entry screen keeps it at its intrinsic size beside the badge.
-      className={className}
-      options={[
-        { value: 'light', label: <SunIcon className="size-3.5" aria-label="亮色" /> },
-        { value: 'dark', label: <MoonIcon className="size-3.5" aria-label="暗色" /> },
-        { value: 'system', label: <MonitorIcon className="size-3.5" aria-label="跟隨系統" /> },
-      ]}
-    />
+    <Button
+      type="button"
+      variant="ghost"
+      size="icon-sm"
+      aria-label={isDark ? '切換為亮色' : '切換為暗色'}
+      onClick={(e) => {
+        // The new theme grows out of the button itself.
+        const box = e.currentTarget.getBoundingClientRect()
+        setTheme(isDark ? 'light' : 'dark', {
+          x: box.left + box.width / 2,
+          y: box.top + box.height / 2,
+        })
+      }}
+      // Round, to match the circle the new theme spreads out as.
+      className={cn('rounded-full', className)}
+    >
+      {isDark ? <MoonIcon className="size-3.5" /> : <SunIcon className="size-3.5" />}
+    </Button>
   )
 }

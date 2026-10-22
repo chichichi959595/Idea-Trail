@@ -37,7 +37,7 @@ export function LandingScreen({ onStart }: { onStart: () => void }) {
           </p>
 
           <Small className="text-base">
-            系統會依你們團隊的狀況挑選發想方法，一步步引導，再把過程收斂成具體的候選提案。
+            系統會依你們團隊的狀況挑選發想方法，一步步引導，再把過程彙整成具體的候選提案。
           </Small>
 
           <div className="flex pt-2">

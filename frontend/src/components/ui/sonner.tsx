@@ -11,11 +11,11 @@ import { useTheme } from "@/components/design/theme-provider"
 import { Toaster as Sonner, type ToasterProps } from "sonner"
 
 const Toaster = ({ ...props }: ToasterProps) => {
-  const { resolvedTheme } = useTheme()
+  const { theme } = useTheme()
 
   return (
     <Sonner
-      theme={resolvedTheme}
+      theme={theme}
       className="toaster group"
       icons={{
         success: <CircleCheckIcon className="size-4" />,

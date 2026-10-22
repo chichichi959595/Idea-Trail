@@ -105,6 +105,31 @@ def _cost_usd(model: str, usage) -> Optional[float]:
     return (billed_input * in_per_m + output * out_per_m) / 1_000_000
 
 
+def _extract_citations(message) -> list[dict]:
+    """Every source the research call's web_search tool actually touched.
+
+    De-duplicated by URL and order-preserving, from two places: the tool
+    result blocks themselves (every page the search considered) and each text
+    block's `citations` (the subset actually quoted). Collecting both means a
+    link purely from the tool content still surfaces even if the model's prose
+    never explicitly cited it.
+    """
+    seen: dict[str, str] = {}
+    for block in message.content:
+        btype = getattr(block, "type", None)
+        if btype == "web_search_tool_result":
+            for item in getattr(block, "content", None) or []:
+                url = getattr(item, "url", None)
+                if url and url not in seen:
+                    seen[url] = getattr(item, "title", None) or url
+        elif btype == "text":
+            for citation in getattr(block, "citations", None) or []:
+                url = getattr(citation, "url", None)
+                if url and url not in seen:
+                    seen[url] = getattr(citation, "title", None) or url
+    return [{"title": title, "url": url} for url, title in seen.items()]
+
+
 class AnthropicAPIProvider:
     """Calls the Anthropic Messages API directly with an ANTHROPIC_API_KEY.
 
@@ -260,6 +285,71 @@ class AnthropicAPIProvider:
             raw=message.to_json(),
             # No api_duration_ms: there is no harness between this and the
             # model, so duration_ms already *is* the API time.
+            **_usage_figures(message.usage),
+        )
+
+    async def research(
+        self,
+        *,
+        query_system_prompt: str,
+        query_user_prompt: str,
+        model: Optional[str] = None,
+    ) -> LLMResult:
+        """A plain-text call with the server-side `web_search` tool attached.
+
+        Only this provider gets this method: the two CLI providers shell out
+        to a coding-agent harness that has no equivalent "the API does the
+        search for me in one round trip" primitive, and bolting a client-side
+        tool loop onto a harness that already has its own would double up the
+        agentic behaviour for no gain. The convergence endpoint checks for
+        this method with `getattr` rather than putting it on the `LLMProvider`
+        protocol, and treats its absence as "skip research", not an error.
+
+        No `json_schema` here on purpose: structured outputs and server tools
+        both shape the final turn, and asking for both at once is asking the
+        model to end on a tool call *and* a schema-constrained message, which
+        isn't a thing a single turn can do. The research call is read as prose
+        by a second, schema-constrained scoring call instead.
+        """
+        import anthropic
+
+        model = model or _DEFAULT_MODEL
+        client = self._client()
+        kwargs = {
+            "model": model,
+            "max_tokens": _MAX_TOKENS,
+            "system": query_system_prompt,
+            "messages": [{"role": "user", "content": query_user_prompt}],
+            "thinking": _thinking_for(model),
+            "tools": [{"type": "web_search_20250305", "name": "web_search", "max_uses": 6}],
+        }
+
+        started = time.monotonic()
+        try:
+            async with client.messages.stream(**kwargs) as stream:
+                message = await stream.get_final_message()
+        except anthropic.APIStatusError as exc:
+            raise ProviderError(f"Anthropic API returned {exc.status_code}: {exc.message}") from exc
+        except anthropic.APIConnectionError as exc:
+            raise ProviderError(f"could not reach the Anthropic API: {exc}") from exc
+        duration_ms = int((time.monotonic() - started) * 1000)
+
+        if message.stop_reason == "refusal":
+            raise ProviderError("Anthropic API declined this request (stop_reason=refusal)")
+
+        text = "\n".join(
+            getattr(block, "text", "") for block in message.content
+            if getattr(block, "type", None) == "text"
+        )
+        return LLMResult(
+            text=text,
+            structured={"citations": _extract_citations(message)},
+            provider=self.name,
+            model=model,
+            resolved_model=message.model,
+            cost_usd=_cost_usd(model, message.usage),
+            duration_ms=duration_ms,
+            raw=message.to_json(),
             **_usage_figures(message.usage),
         )
 

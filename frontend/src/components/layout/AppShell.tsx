@@ -1,4 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
+import type { LucideIcon } from 'lucide-react'
 import { CheckIcon, MenuIcon, XIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
@@ -26,8 +27,17 @@ export interface NavStep {
   disabled?: boolean
 }
 
+/** A place rather than a phase: the libraries, which outlive any session. */
+export interface NavPlace {
+  id: string
+  label: string
+  icon: LucideIcon
+  hint?: string
+}
+
 export function AppShell({
   steps,
+  places = [],
   activeId,
   onNavigate,
   /** Rail footer: the model picker summary, the session's own facts. */
@@ -35,6 +45,8 @@ export function AppShell({
   children,
 }: {
   steps: NavStep[]
+  /** Listed under the flow, without progress markers — they aren't steps. */
+  places?: NavPlace[]
   activeId: string
   onNavigate: (id: string) => void
   aside?: ReactNode
@@ -53,7 +65,10 @@ export function AppShell({
 
   const rail = (
     <div className="flex h-full flex-col gap-6 overflow-y-auto px-4 py-5">
-      <BrandLockup />
+      <div className="flex items-center justify-between gap-2">
+        <BrandLockup />
+        <ThemeControl />
+      </div>
 
       <nav aria-label="工作階段" className="flex flex-col gap-0.5">
         <Eyebrow className="px-2 pb-2">工作階段</Eyebrow>
@@ -70,12 +85,24 @@ export function AppShell({
         ))}
       </nav>
 
-      {aside && <div className="flex flex-col gap-3">{aside}</div>}
+      {places.length > 0 && (
+        <nav aria-label="資料庫" className="flex flex-col gap-0.5">
+          <Eyebrow className="px-2 pb-2">資料庫</Eyebrow>
+          {places.map((place) => (
+            <PlaceItem
+              key={place.id}
+              place={place}
+              active={place.id === activeId}
+              onSelect={() => {
+                onNavigate(place.id)
+                setMobileOpen(false)
+              }}
+            />
+          ))}
+        </nav>
+      )}
 
-      <div className="mt-auto flex flex-col gap-2 pt-4">
-        <Eyebrow className="px-2">外觀</Eyebrow>
-        <ThemeControl className="w-full justify-between" />
-      </div>
+      {aside && <div className="mt-auto flex flex-col gap-3">{aside}</div>}
     </div>
   )
 
@@ -161,6 +188,40 @@ function NavItem({
           )}
         >
           {step.hint}
+        </span>
+      )}
+    </button>
+  )
+}
+
+function PlaceItem({
+  place,
+  active,
+  onSelect,
+}: {
+  place: NavPlace
+  active: boolean
+  onSelect: () => void
+}) {
+  const Icon = place.icon
+  return (
+    <button
+      type="button"
+      onClick={onSelect}
+      aria-current={active ? 'page' : undefined}
+      className={cn(
+        'flex items-center gap-2.5 rounded-lg px-2 py-1.5 text-left text-sm transition-colors duration-150',
+        'focus-visible:ring-[3px] focus-visible:ring-sidebar-ring focus-visible:outline-none',
+        active
+          ? 'bg-sidebar-accent font-medium text-foreground'
+          : 'text-muted-foreground hover:bg-sidebar-accent/60 hover:text-foreground',
+      )}
+    >
+      <Icon className="size-[15px] shrink-0" aria-hidden />
+      <span className="min-w-0 flex-1 truncate">{place.label}</span>
+      {place.hint && (
+        <span data-numeric className="shrink-0 text-2xs text-muted-foreground/70">
+          {place.hint}
         </span>
       )}
     </button>

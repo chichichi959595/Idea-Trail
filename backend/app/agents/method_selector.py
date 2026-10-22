@@ -3,11 +3,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from app.agents.framework import (
+    DISCOVERY_ORDER,
     METHOD_ORDER,
+    eligible_methods,
     method_descriptions,
     method_labels,
 )
-from app.db.models import IdeationSession
+from app.agents.framework.base import render_pain_point
+from app.db.models import IdeationSession, PainPoint
 from app.providers.base import LLMResult
 
 RECOMMENDATION_COUNT = 3
@@ -35,60 +38,96 @@ SELECTOR_SYSTEM_PROMPT = """你是 Method Selector Agent，負責從完整的方
 
 一律使用繁體中文，只回傳符合 JSON schema 的結構化輸出，不要有多餘文字。"""
 
+DISCOVERY_SELECTOR_SYSTEM_PROMPT = """你是 Method Selector Agent，負責從「痛點發想」的方法目錄裡，
+為這個團隊挑出最適合的 {count} 個找痛點的方法並排出順序。
 
-def score_methods(session: IdeationSession) -> dict[str, int]:
+這個階段的團隊還沒有明確的痛點。這些方法的目的是幫他們從自己的生活與經驗裡，
+把值得解決的困擾找出來——不是直接想解法或產品。
+請以團隊實際寫的內容（技術背景、領域偏好、限制條件、可用時間）為判斷依據。
+
+針對你選的每一個方法，用兩到三句話向這個團隊說明「為什麼這個方法適合他們目前的狀況」，
+理由要扣住他們實際填的內容，不要只是複述方法的通用介紹。
+
+最後在 adjustment 欄位用一到兩句話總結你排這個順序的考量。
+
+一律使用繁體中文，只回傳符合 JSON schema 的結構化輸出，不要有多餘文字。"""
+
+STAGES = ("ideation", "discovery")
+"""專案發想 and 痛點發想 — each recommends from its own catalog."""
+
+
+def score_methods(session: IdeationSession, *, has_pain_point: bool = False) -> dict[str, int]:
     """Rule-of-thumb scores from the two yes/no fields.
 
     Only ever a hint now — `recommend()` passes the resulting order to the
     model as a suggestion and lets it decide, and falls back to this order
     only when the model's answer is unusable.
     """
-    scores = {m: 0 for m in METHOD_ORDER}
-    if session.has_clear_problem is False:
-        scores["pain_point"] += 2
-        scores["user_journey"] += 2
+    # Only what this team can play: a method it's too small for (多人接龍 with
+    # two people) isn't scored low, it isn't in the running at all.
+    scores = {m: 0 for m in eligible_methods(session.team_size)}
+    # A pain point picked for this round settles the question whatever the
+    # setup screen said: the team has a clear problem now.
+    clear_problem = True if has_pain_point else session.has_clear_problem
+
+    def bump(method: str, points: int) -> None:
+        if method in scores:
+            scores[method] += points
+
+    if clear_problem is False:
+        bump("pain_point", 2)
+        bump("user_journey", 2)
         # 沒有明確方向時，這幾種發散技法也適合拿來先打開選項
-        scores["how_might_we"] += 1
-        scores["mashup"] += 1
-        scores["crazy_8s"] += 1
+        bump("how_might_we", 1)
+        bump("mashup", 1)
+        bump("crazy_8s", 1)
     if session.has_existing_product:
-        scores["scamper"] += 2
-        scores["reverse_thinking"] += 1
-        scores["analogy"] += 1
+        bump("scamper", 2)
+        bump("reverse_thinking", 1)
+        bump("analogy", 1)
     # capability_mapping used to be scored off an "是否技術導向" yes/no field.
     # That field is gone, and whether a team is tech-driven now only shows up
     # in their free-text 技術背景 — which the rules can't read, so it's left to
     # the model to surface this method when the text calls for it.
-    if session.has_clear_problem:
+    if clear_problem is False and session.team_size is not None:
+        # 接龍最擅長的是「還沒有方向」。人太少的團隊已經被 eligible_methods
+        # 整個排除了；這裡只多要求人數是真的填了——沒填就不知道現場湊不湊得到人。
+        bump("relay", 1)
+    if clear_problem:
         # 已經有方向時，隨機刺激比較能發揮強迫聯想的效果
-        scores["random_input"] += 1
+        bump("random_input", 1)
     return scores
 
 
-def rank_methods(session: IdeationSession, top_n: int = RECOMMENDATION_COUNT) -> list[str]:
+def rank_methods(
+    session: IdeationSession,
+    top_n: int = RECOMMENDATION_COUNT,
+    *,
+    has_pain_point: bool = False,
+) -> list[str]:
     """The rules' suggested ordering — always exactly `top_n` methods.
 
     Methods the rules have no opinion about (score 0) still fill the tail in
     catalog order, so the caller always has a complete fallback list.
     """
-    scores = score_methods(session)
+    scores = score_methods(session, has_pain_point=has_pain_point)
     ranked = sorted(scores.items(), key=lambda kv: (-kv[1], METHOD_ORDER.index(kv[0])))
     return [method for method, _ in ranked][:top_n]
 
 
-def _selector_schema() -> dict:
+def _selector_schema(allowed: list[str], count: int = RECOMMENDATION_COUNT) -> dict:
     return {
         "type": "object",
         "properties": {
             "adjustment": {"type": "string"},
             "items": {
                 "type": "array",
-                "minItems": RECOMMENDATION_COUNT,
-                "maxItems": RECOMMENDATION_COUNT,
+                "minItems": count,
+                "maxItems": count,
                 "items": {
                     "type": "object",
                     "properties": {
-                        "method": {"type": "string", "enum": METHOD_ORDER},
+                        "method": {"type": "string", "enum": allowed},
                         "rationale": {"type": "string"},
                     },
                     "required": ["method", "rationale"],
@@ -102,20 +141,25 @@ def _selector_schema() -> dict:
 
 
 def finalize_selection(
-    proposed: list[str], fallback: list[str], count: int = RECOMMENDATION_COUNT
+    proposed: list[str],
+    fallback: list[str],
+    count: int = RECOMMENDATION_COUNT,
+    allowed: list[str] = METHOD_ORDER,
 ) -> list[str]:
     """The model's picks, cleaned up and guaranteed to be exactly `count` long.
 
     The model chooses freely — this only drops unknown/duplicate methods and
     tops the list back up (first from the rules' ordering, then from the rest
     of the catalog) so a truncated or garbled response still yields a complete
-    recommendation list instead of a short one.
+    recommendation list instead of a short one. `allowed` is the methods this
+    team can play; anything else is dropped like an unknown name, because the
+    schema enum alone isn't enforced on every provider route.
     """
     final: list[str] = []
-    for method in (*proposed, *fallback, *METHOD_ORDER):
+    for method in (*proposed, *fallback, *allowed):
         if len(final) >= count:
             break
-        if method in final or method not in METHOD_ORDER:
+        if method in final or method not in allowed:
             continue
         final.append(method)
     return final
@@ -130,6 +174,11 @@ class SelectorPrompt:
     user_prompt: str
     schema: dict
     rule_ranking: list[str]
+    allowed: list[str]
+    """The methods this team can play — what the model was offered."""
+    count: int = RECOMMENDATION_COUNT
+    """How many come back. Fewer than the usual three only when the catalog
+    itself is smaller — 痛點發想 may hold just one or two methods."""
 
 
 @dataclass
@@ -147,14 +196,54 @@ class Recommendation:
     result: LLMResult
 
 
-def _render_catalog() -> str:
+def _render_catalog(allowed: list[str]) -> str:
     labels, descriptions = method_labels(), method_descriptions()
-    return "\n".join(f"- {m}（{labels[m]}）：{descriptions[m]}" for m in METHOD_ORDER)
+    return "\n".join(f"- {m}（{labels[m]}）：{descriptions[m]}" for m in allowed)
 
 
-def build_prompt(session: IdeationSession) -> SelectorPrompt:
-    scores = score_methods(session)
-    suggestion = rank_methods(session)
+def _render_team(session: IdeationSession) -> str:
+    return (
+        "# 團隊基本資訊\n"
+        f"團隊人數: {session.team_size}\n"
+        f"可用時間: {session.time_budget}\n"
+        f"技術背景: {session.tech_background}\n"
+        f"領域偏好: {session.domain_pref}\n"
+        f"限制條件: {session.constraints_text}\n"
+    )
+
+
+def build_discovery_prompt(session: IdeationSession) -> SelectorPrompt:
+    """痛點發想's recommendation.
+
+    No rule ranking: the rules score methods off "do you have a problem / an
+    existing product", and every team on this screen has already answered the
+    first one with no. With nothing to go on but the team's own text, the model
+    ranks the catalog outright, and an unusable answer falls back to catalog
+    order.
+    """
+    allowed = list(DISCOVERY_ORDER)
+    count = min(RECOMMENDATION_COUNT, len(allowed))
+    user_prompt = (
+        f"{_render_team(session)}\n"
+        f"# 痛點發想方法目錄（共 {len(allowed)} 個）\n{_render_catalog(allowed)}\n\n"
+        f"請從上面的目錄挑出最適合的 {count} 個方法（依推薦順序），"
+        f"每個附上針對這個團隊的推薦理由，並在 adjustment 總結你的排序考量。"
+    )
+    return SelectorPrompt(
+        system_prompt=DISCOVERY_SELECTOR_SYSTEM_PROMPT.format(count=count),
+        user_prompt=user_prompt,
+        schema=_selector_schema(allowed, count),
+        rule_ranking=[],
+        allowed=allowed,
+        count=count,
+    )
+
+
+def build_prompt(session: IdeationSession, pain_point: PainPoint | None = None) -> SelectorPrompt:
+    allowed = eligible_methods(session.team_size)
+    has_pain_point = pain_point is not None
+    scores = score_methods(session, has_pain_point=has_pain_point)
+    suggestion = rank_methods(session, has_pain_point=has_pain_point)
     labels, descriptions = method_labels(), method_descriptions()
 
     suggestion_block = "\n".join(
@@ -168,17 +257,13 @@ def build_prompt(session: IdeationSession) -> SelectorPrompt:
         )
 
     user_prompt = (
-        "# 團隊基本資訊\n"
-        f"團隊人數: {session.team_size}\n"
-        f"可用時間: {session.time_budget}\n"
-        f"技術背景: {session.tech_background}\n"
-        f"領域偏好: {session.domain_pref}\n"
-        f"限制條件: {session.constraints_text}\n"
+        f"{_render_team(session)}"
         f"是否已有明確問題: {session.has_clear_problem}\n"
         f"他們說的問題是: {session.clear_problem_text or '(未填)'}\n"
         f"是否已有既有產品/題目想改造: {session.has_existing_product}\n"
         f"想改造的對象是: {session.existing_product_text or '(未填)'}\n\n"
-        f"# 完整方法目錄（共 {len(METHOD_ORDER)} 個，你可以自由從中挑選）\n{_render_catalog()}\n\n"
+        f"{render_pain_point(pain_point)}"
+        f"# 完整方法目錄（共 {len(allowed)} 個，你可以自由從中挑選）\n{_render_catalog(allowed)}\n\n"
         f"# 規則排出的參考排序（僅供參考，可自由推翻）\n{suggestion_block}\n\n"
         f"請從上面的目錄挑出最適合的 {RECOMMENDATION_COUNT} 個方法（依推薦順序），"
         f"每個附上針對這個團隊的推薦理由，並在 adjustment 說明你的選擇與參考排序的差異。"
@@ -187,8 +272,9 @@ def build_prompt(session: IdeationSession) -> SelectorPrompt:
     return SelectorPrompt(
         system_prompt=SELECTOR_SYSTEM_PROMPT.format(count=RECOMMENDATION_COUNT),
         user_prompt=user_prompt,
-        schema=_selector_schema(),
+        schema=_selector_schema(allowed),
         rule_ranking=suggestion,
+        allowed=allowed,
     )
 
 
@@ -196,7 +282,12 @@ def interpret(prompt: SelectorPrompt, result: LLMResult) -> Recommendation:
     """Turn the model's answer into the recommendation actually shown."""
     structured = result.structured or {}
     items = [i for i in (structured.get("items") or []) if isinstance(i, dict) and "method" in i]
-    methods = finalize_selection([i["method"] for i in items], prompt.rule_ranking)
+    methods = finalize_selection(
+        [i["method"] for i in items],
+        prompt.rule_ranking,
+        count=prompt.count,
+        allowed=prompt.allowed,
+    )
 
     return Recommendation(
         methods=methods,

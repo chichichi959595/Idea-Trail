@@ -3,7 +3,18 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api import method_runs, methods, providers, sessions
+from app.access import LocalOnlyExceptParticipants
+from app.api import (
+    convergence,
+    library,
+    method_runs,
+    methods,
+    network,
+    pain_check,
+    providers,
+    relay,
+    sessions,
+)
 from app.db.models import Base
 from app.db.schema_sync import sync_columns
 from app.db.session import engine
@@ -26,11 +37,19 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+# Added last so it runs first: nothing from off this machine gets past it
+# except the 多人接龍 participant routes. See app/access.py.
+app.add_middleware(LocalOnlyExceptParticipants)
 
 app.include_router(providers.router)
 app.include_router(methods.router)
 app.include_router(sessions.router)
 app.include_router(method_runs.router)
+app.include_router(relay.router)
+app.include_router(network.router)
+app.include_router(library.router)
+app.include_router(convergence.router)
+app.include_router(pain_check.router)
 
 
 @app.get("/")

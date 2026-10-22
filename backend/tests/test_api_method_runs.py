@@ -272,6 +272,22 @@ def test_empty_answer_skips_the_step_without_calling_the_llm(client, session_id,
     assert provider.calls == []  # a timed-out step costs nothing
 
 
+def test_crazy_8s_solutions_are_recorded_without_calling_the_llm(
+    client, session_id, provider, start_run, answer_all
+):
+    run = start_run(method="crazy_8s")
+    payload = answer_all(run, answer="每天提醒一次")
+
+    # Only the problem statement and the final 彙整 reach the model.
+    assert len(provider.step_calls) == 1
+    assert len(provider.finalize_calls) == 1
+    steps = payload["method_run"]["steps"]
+    assert all(s["user_answer"] == "每天提醒一次" for s in steps)
+    assert all(s["agent_output"] is None for s in steps[1:])
+    # Every answer reaches the finalize call, which is where they get judged.
+    assert provider.finalize_calls[0]["user_prompt"].count("回答: 每天提醒一次") == 7
+
+
 def test_stale_step_index_is_rejected(client, session_id, start_run):
     run = start_run()
     client.post(f"/method-runs/{run['id']}/answer", json={"step_index": 0, "answer": "每天中午排隊排很久"})

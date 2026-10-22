@@ -1,18 +1,40 @@
 import type {
   AnswerStepResponse,
+  ConvergenceAgentStage,
+  ConvergencePatch,
+  ConvergenceProject,
+  DebateMode,
   Idea,
+  LibraryLink,
+  IdeaSize,
   MethodCatalogEntry,
   MethodRecommendationResult,
+  MethodStage,
   MethodRun,
+  PainCheck,
+  PainPoint,
+  PainPointDraft,
   ProvidersHealth,
   Session,
 } from './types'
 
-const BASE_URL = 'http://127.0.0.1:8000'
+// Same origin as the page, through the Vite proxy (see vite.config.ts) — so it
+// works unchanged from the host's localhost, a phone on the LAN, or an ngrok URL.
+export const BASE_URL = '/api'
+
+/**
+ * Sent on every request. ngrok's free tier answers a browser-looking request
+ * with an HTML warning page instead of passing it through; this header is how
+ * a page opts out of that for its own API calls. Harmless everywhere else.
+ */
+export const BASE_HEADERS = {
+  'Content-Type': 'application/json',
+  'ngrok-skip-browser-warning': '1',
+}
 
 async function request<T>(path: string, options?: RequestInit): Promise<T> {
   const res = await fetch(`${BASE_URL}${path}`, {
-    headers: { 'Content-Type': 'application/json' },
+    headers: BASE_HEADERS,
     ...options,
   })
   if (!res.ok) {
@@ -65,7 +87,7 @@ async function streamRequest<T>(
   onThinking?: OnThinking,
 ): Promise<T> {
   const res = await fetch(`${BASE_URL}${path}`, {
-    headers: { 'Content-Type': 'application/json' },
+    headers: BASE_HEADERS,
     ...options,
   })
   // Validation failures still come back as real status codes, because the
@@ -116,6 +138,13 @@ async function streamRequest<T>(
   return result as T
 }
 
+export type LibraryKind = 'ideas' | 'pain-points'
+
+const LINK_PATHS: Record<LibraryKind, string> = {
+  ideas: 'idea-links',
+  'pain-points': 'pain-point-links',
+}
+
 export const api = {
   providersHealth: () => request<ProvidersHealth>('/providers/health'),
 
@@ -136,11 +165,15 @@ export const api = {
     sessionId: number,
     provider = 'claude',
     model?: string | null,
+    painPointId?: number | null,
     onThinking?: OnThinking,
     signal?: AbortSignal,
+    /** Which catalog to recommend from: 專案發想's or 痛點發想's. */
+    stage: MethodStage = 'ideation',
   ) => {
-    const params = new URLSearchParams({ provider })
+    const params = new URLSearchParams({ provider, stage })
     if (model) params.set('model', model)
+    if (painPointId != null) params.set('pain_point_id', String(painPointId))
     return streamRequest<MethodRecommendationResult>(
       `/sessions/${sessionId}/method-recommendation/stream?${params}`,
       { method: 'POST', signal },
@@ -154,6 +187,7 @@ export const api = {
     provider: string,
     model?: string | null,
     stepModel?: string | null,
+    painPointId?: number | null,
   ) =>
     request<MethodRun>(`/sessions/${sessionId}/method-runs`, {
       method: 'POST',
@@ -162,6 +196,7 @@ export const api = {
         provider,
         model: model || null,
         step_model: stepModel || null,
+        pain_point_id: painPointId ?? null,
       }),
     }),
 
@@ -220,4 +255,96 @@ export const api = {
       },
       onThinking,
     ),
+
+  // ---- libraries: span every session, not just this one ----
+
+  /** A light read of the pain point typed on the setup screen, before the
+   * team is allowed to skip 痛點發想. Runs on the step model. */
+  checkPainPoint: (statement: string, provider: string, model: string) =>
+    request<PainCheck>('/pain-check', {
+      method: 'POST',
+      body: JSON.stringify({ statement, provider, model: model || null }),
+    }),
+
+  listPainPoints: () => request<PainPoint[]>('/pain-points'),
+
+  createPainPoint: (draft: PainPointDraft, sessionId?: number | null) =>
+    request<PainPoint>('/pain-points', {
+      method: 'POST',
+      body: JSON.stringify({ ...draft, session_id: sessionId ?? null }),
+    }),
+
+  updatePainPoint: (id: number, draft: PainPointDraft) =>
+    request<PainPoint>(`/pain-points/${id}`, { method: 'PUT', body: JSON.stringify(draft) }),
+
+  deletePainPoint: (id: number) =>
+    request<{ deleted: boolean }>(`/pain-points/${id}`, { method: 'DELETE' }),
+
+  listAllIdeas: () => request<Idea[]>('/ideas'),
+
+  /** Removes an idea from the library, with its AI links and 專案收斂 record. */
+  deleteIdea: (id: number) => request<{ ok: true }>(`/ideas/${id}`, { method: 'DELETE' }),
+
+  setIdeaSize: (id: number, size: IdeaSize | null) =>
+    request<Idea>(`/ideas/${id}`, { method: 'PATCH', body: JSON.stringify({ size }) }),
+
+  /** AI-judged links for one library's graph. */
+  listLinks: (library: LibraryKind) => request<LibraryLink[]>(`/${LINK_PATHS[library]}`),
+
+  analyzeLinks: (
+    library: LibraryKind,
+    provider: string,
+    model?: string | null,
+    onThinking?: OnThinking,
+  ) =>
+    streamRequest<LibraryLink[]>(
+      `/${LINK_PATHS[library]}/analyze/stream`,
+      { method: 'POST', body: JSON.stringify({ provider, model: model || null }) },
+      onThinking,
+    ),
+
+  // ---- 專案收斂: one idea at a time, agents argue, the user decides ----
+
+  listConvergenceProjects: () => request<ConvergenceProject[]>('/convergence-projects'),
+
+  /** Get-or-create the convergence record for an idea. `sessionId` is whose
+   * team context the agents read; null falls back to the idea's own session. */
+  openConvergence: (ideaId: number, sessionId: number | null) =>
+    request<ConvergenceProject>('/convergence-projects', {
+      method: 'POST',
+      body: JSON.stringify({ idea_id: ideaId, session_id: sessionId }),
+    }),
+
+  updateConvergence: (id: number, patch: ConvergencePatch) =>
+    request<ConvergenceProject>(`/convergence-projects/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(patch),
+    }),
+
+  /** Run one agent stage. Every stage answers with the whole updated record. */
+  runConvergenceAgent: (
+    id: number,
+    stage: ConvergenceAgentStage,
+    body: {
+      provider: string
+      model?: string | null
+      focus?: string | null
+      mode?: DebateMode
+      /** debate/reply only: which side the user speaks for, and the line. */
+      side?: 'pro' | 'con'
+      text?: string
+    },
+    onThinking?: OnThinking,
+    signal?: AbortSignal,
+  ) =>
+    streamRequest<ConvergenceProject>(
+      `/convergence-projects/${id}/${stage}/stream`,
+      { method: 'POST', body: JSON.stringify({ ...body, model: body.model || null }), signal },
+      onThinking,
+    ),
+
+  /** Same reason as `cancelMethodRun`: aborting the fetch alone never reaches
+   * a CLI provider that is writing nothing. */
+  cancelConvergence: (id: number) =>
+    request<{ stopped: boolean }>(`/convergence-projects/${id}/cancel`, { method: 'POST' }),
 }

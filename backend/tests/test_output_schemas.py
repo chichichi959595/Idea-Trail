@@ -58,4 +58,47 @@ def test_finalize_prompt_survives_a_run_with_no_answers(name):
     steps = [FakeStep(i) for i in range(len(agent.steps))]
     system_prompt, user_prompt, schema = agent.build_finalize_prompt(FakeSession(), steps)
     assert system_prompt and user_prompt
-    assert schema is FINALIZE_OUTPUT_SCHEMA
+    # No placeholder survived into the prompt actually sent.
+    assert "{" not in system_prompt
+    # Built per method now rather than shared, so this checks the shape instead
+    # of the object — including the floor, which a run with nothing answered
+    # must still have (Crazy 8s counts answers, and zero would let an empty
+    # result pass as success).
+    ideas = schema["properties"]["ideas"]
+    assert ideas["minItems"] >= 1
+    assert ideas["maxItems"] >= ideas["minItems"]
+
+
+@pytest.mark.parametrize("name", METHOD_ORDER)
+def test_every_method_states_its_candidate_count_in_the_prompt(name):
+    """The count has to be in the prose, not only in the schema.
+
+    `_sanitize_schema` strips `minItems`/`maxItems` before the Anthropic
+    request because structured outputs reject array-length keywords — so on
+    that route the prompt text is the only thing carrying the count.
+    """
+    agent = get_framework_agent(name)
+    spec = agent.finalize_spec([])
+    assert str(spec.min_items) in spec.material or f"{spec.min_items}~{spec.max_items}" in spec.material
+
+
+def test_pain_point_yields_three_takes_on_one_problem():
+    assert get_framework_agent("pain_point").finalize_spec([]).min_items == 3
+
+
+def test_crazy_8s_yields_at_most_one_candidate_per_written_solution():
+    """Unwritten steps don't count, and finalize may skip a non-answer (it is
+    the only relevance check those steps get) — but never invents extras."""
+
+    class Step:
+        def __init__(self, name, answer):
+            self.step_name = name
+            self.user_answer = answer
+
+    agent = get_framework_agent("crazy_8s")
+    steps = [Step("problem", "忘記繳作業")] + [
+        Step(f"solution_{i + 1}", "解法" if i < 4 else None) for i in range(6)
+    ]
+    spec = agent.finalize_spec(steps)
+    assert (spec.min_items, spec.max_items) == (1, 4)
+    assert "1~4 個" in spec.material

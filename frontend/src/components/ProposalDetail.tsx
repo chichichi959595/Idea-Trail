@@ -1,8 +1,9 @@
+import type { ReactNode } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { GitMergeIcon, SparklesIcon } from 'lucide-react'
 import { api } from '../api'
 import { useMethodCatalog } from '../useMethodCatalog'
-import type { Idea } from '../types'
+import type { Idea, PainPoint } from '../types'
 import { Badge } from '@/components/ui/badge'
 import {
   Dialog,
@@ -21,6 +22,10 @@ interface Props {
   idea: Idea
   allIdeas: Idea[]
   onClose: () => void
+  /** The problem this idea was built on, when it still exists. */
+  painPoint?: PainPoint | null
+  /** Controls under the title — the idea library puts its size picker here. */
+  headerExtra?: ReactNode
 }
 
 /**
@@ -30,7 +35,7 @@ interface Props {
  * scroll lock, click-outside and `aria-modal` all come from the primitive
  * instead of being partially reimplemented here.
  */
-export function ProposalDetail({ idea, allIdeas, onClose }: Props) {
+export function ProposalDetail({ idea, allIdeas, onClose, painPoint, headerExtra }: Props) {
   const { labelOf } = useMethodCatalog()
   const { data: run, isPending } = useQuery({
     queryKey: ['method-run', idea.method_run_id],
@@ -64,6 +69,13 @@ export function ProposalDetail({ idea, allIdeas, onClose }: Props) {
           <DialogDescription className="sr-only">
             {idea.title} 的完整說明與發想歷程
           </DialogDescription>
+          {painPoint && (
+            <Small className="text-xs">
+              <span className="text-muted-foreground">解決的痛點：</span>
+              <span className="text-foreground/85">{painPoint.statement}</span>
+            </Small>
+          )}
+          {headerExtra}
         </DialogHeader>
 
         <Tabs defaultValue="proposal" className="gap-0">

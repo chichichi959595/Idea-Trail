@@ -17,7 +17,6 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
-from app.agents.framework.base import FINALIZE_OUTPUT_SCHEMA
 from app.db.models import Base
 from app.db.session import get_db
 from app.main import app
@@ -80,7 +79,12 @@ class FakeProvider:
     async def complete(
         self, *, system_prompt: str, user_prompt: str, json_schema=None, model=None
     ) -> LLMResult:
-        is_finalize = json_schema is FINALIZE_OUTPUT_SCHEMA
+        # The finalize call is the one carrying the 彙整 system prompt. This used
+        # to be an identity check against a single shared schema object, but
+        # finalize schemas are now built per method (the candidate count varies
+        # by method and, for Crazy 8s, by how many steps were answered), so
+        # there is no longer one object to compare against.
+        is_finalize = "彙整步驟 Agent" in system_prompt
         self.calls.append(
             {
                 "system_prompt": system_prompt,
@@ -158,7 +162,10 @@ def client(provider):
             db.close()
 
     app.dependency_overrides[get_db] = override_get_db
-    with TestClient(app) as c:
+    # A loopback client address: the app only serves its host-side routes to
+    # requests from this machine (app/access.py), and TestClient's default
+    # client host, "testclient", isn't an address at all.
+    with TestClient(app, client=("127.0.0.1", 50000)) as c:
         yield c
     app.dependency_overrides.clear()
     engine.dispose()

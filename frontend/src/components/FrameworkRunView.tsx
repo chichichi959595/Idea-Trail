@@ -1,9 +1,9 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import {
   ArrowRightIcon,
   ArrowUpIcon,
-  ChevronDownIcon,
   CircleCheckIcon,
+  CircleHelpIcon,
   RotateCcwIcon,
   SendHorizonalIcon,
   SquareIcon,
@@ -14,6 +14,14 @@ import type { MethodRun, MethodStep } from '../types'
 import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog'
 import {
   PromptInput,
   PromptInputAction,
@@ -44,6 +52,11 @@ interface Props {
   onStop: () => void
   stopping: boolean
   onGoToIdeas: () => void
+  /** Replaces the closing turn's body once the run is done. 痛點發想 uses it
+   * to show the pain points it found instead of pointing at the idea wall. */
+  finishedContent?: ReactNode
+  /** Shown above the header — the pain point an ideation run is working on. */
+  banner?: ReactNode
 }
 
 /**
@@ -75,8 +88,15 @@ export function FrameworkRunView({
   onStop,
   stopping,
   onGoToIdeas,
+  finishedContent,
+  banner,
 }: Props) {
   const { get, labelOf } = useMethodCatalog()
+  // 痛點發想 runs on this same screen, but what it collects is pain points,
+  // not idea fragments, and it ends in the pain point library.
+  const discovery = get(run.method_name)?.stage === 'discovery'
+  const yieldLabel = discovery ? '候選痛點' : '想法碎片'
+  const outcomeLabel = discovery ? '痛點' : '候選想法'
   const currentStep = run.steps.find((s) => s.step_index === run.current_step_index)
   // Where the transcript ends.
   //
@@ -109,7 +129,6 @@ export function FrameworkRunView({
   // Sticky for the rest of the run: the composer moves down on the first send
   // and stays there. A rejected answer must not float it back to the middle.
   const [hasSent, setHasSent] = useState(false)
-  const [showTutorial, setShowTutorial] = useState(false)
 
   const stepId = currentStep?.id
   // A genuinely new question starts with an empty box. (A *rejected* answer
@@ -196,7 +215,7 @@ export function FrameworkRunView({
         <div className="flex flex-col gap-3">
           <AiWorking
             label={stopping ? '正在停止這次呼叫' : 'AI 正在讀你的回答'}
-            detail={stopping ? '收掉 CLI 那邊還在跑的呼叫' : '檢查是否切題並記下想法碎片'}
+            detail={stopping ? '收掉 CLI 那邊還在跑的呼叫' : `檢查是否切題並記下${yieldLabel}`}
           />
           <AiReasoning text={thinking} streaming />
         </div>
@@ -219,24 +238,42 @@ export function FrameworkRunView({
         description={method?.description}
         actions={
           tutorial && (
-            <button
-              type="button"
-              aria-expanded={showTutorial}
-              onClick={() => setShowTutorial((open) => !open)}
-              className="group flex items-center gap-1.5 rounded-md text-xs font-medium text-muted-foreground transition-colors hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none"
-            >
-              怎麼玩？
-              {/* The chevron stays because it does something — it says this
-                  opens. A question mark beside the words 怎麼玩 would only have
-                  said them again. */}
-              <ChevronDownIcon
-                className={cn(
-                  'size-3.5 transition-transform duration-200',
-                  showTutorial && 'rotate-180',
-                )}
-                aria-hidden
-              />
-            </button>
+            // A dialog, not a panel under the title: the header used to grow by
+            // however long this method's explanation was, pushing the question
+            // down mid-run. Radix closes it on a click anywhere outside.
+            <Dialog>
+              <DialogTrigger asChild>
+                <Button variant="outline" size="sm" className="text-muted-foreground">
+                  怎麼玩
+                  <CircleHelpIcon aria-hidden />
+                </Button>
+              </DialogTrigger>
+              {/* One fixed size for every method — the box shouldn't change
+                  shape depending on which method's text is longer. Height is
+                  capped by the viewport on a short screen, and the text
+                  scrolls inside it rather than the box growing. */}
+              <DialogContent className="flex h-[min(26rem,calc(100svh-4rem))] flex-col gap-0 p-0 sm:max-w-md">
+                <DialogHeader className="shrink-0 border-b border-border px-6 pt-6 pb-4 text-left">
+                  <Eyebrow>怎麼玩</Eyebrow>
+                  <DialogTitle className="text-xl">{labelOf(run.method_name)}</DialogTitle>
+                  <DialogDescription className="sr-only">
+                    {labelOf(run.method_name)} 的玩法說明
+                  </DialogDescription>
+                </DialogHeader>
+                <div className="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-6 py-5 text-sm">
+                  <p className="text-pretty">{tutorial.intro}</p>
+                  <div className="flex flex-col gap-1.5">
+                    <Eyebrow>步驟</Eyebrow>
+                    <p className="text-pretty text-muted-foreground">{tutorial.how_to}</p>
+                  </div>
+                  {totalSteps > 1 && (
+                    <Small data-numeric className="mt-auto text-xs">
+                      共 {totalSteps} 步
+                    </Small>
+                  )}
+                </div>
+              </DialogContent>
+            </Dialog>
           )
         }
         meta={
@@ -253,28 +290,19 @@ export function FrameworkRunView({
           ))
         }
       >
-        {/* Opened on demand, and the only thing here that changes the header's
-            height — which is the user's own doing. Plain state rather than a
-            Collapsible because the trigger sits up in the title row and the
-            panel belongs down here, on the full column. */}
-        {tutorial && showTutorial && (
-          <div className="animate-in fade-in slide-in-from-top-1 flex flex-col gap-2 rounded-xl border border-border bg-muted/60 p-3.5 duration-200">
-            <Small className="text-foreground/80">{tutorial.intro}</Small>
-            <Small>
-              <span className="font-medium text-foreground">怎麼玩：</span>
-              {tutorial.how_to}
-            </Small>
-          </div>
-        )}
+        {banner}
       </ScreenHeader>
 
       {centered ? (
         // Nothing has been said yet, so there is no transcript for the box to
-        // be the foot of. Question and box, centred, and that's the screen.
-        <div className="flex min-h-0 flex-1 items-center justify-center overflow-y-auto px-5 py-8 sm:px-8">
-          <div className="animate-in fade-in slide-in-from-bottom-2 flex w-full max-w-4xl flex-col gap-6 duration-300">
-            {currentQuestion}
-            {composer}
+        // be the foot of. Question and box, centred vertically and starting
+        // under the title, and that's the screen.
+        <div className="flex min-h-0 flex-1 items-center overflow-y-auto px-5 py-8 sm:px-8">
+          <div className="animate-in fade-in slide-in-from-bottom-2 mx-auto w-full max-w-6xl duration-300">
+            <div className="mx-auto flex w-full max-w-4xl flex-col gap-6">
+              {currentQuestion}
+              {composer}
+            </div>
           </div>
         </div>
       ) : (
@@ -283,96 +311,104 @@ export function FrameworkRunView({
             {/* `justify-end` with `min-h-full`: the conversation grows up from
                 the input rather than hanging from the top of a half-empty pane. */}
             <ChatContainerContent className="min-h-full justify-end px-5 py-8 sm:px-8">
-              <div className="mx-auto flex w-full max-w-4xl flex-col gap-8">
-                {pastSteps.length > 0 && (
-                  <ol className="flex flex-col gap-7">
-                    {pastSteps.map((s) => (
-                      <li key={s.id} className="flex flex-col gap-3">
-                        <Turn role="ai" label={s.step_name}>
-                          {s.question_shown}
-                        </Turn>
-
-                        {s.user_answer ? (
-                          <Turn role="user">{s.user_answer}</Turn>
-                        ) : (
-                          <Turn role="user">
-                            <span className="text-muted-foreground italic">
-                              （時間到，這題沒有作答）
-                            </span>
+              {/* The frame every screen shares, then the reading column inside
+                  it — so the transcript starts under the title. */}
+              <div className="mx-auto w-full max-w-6xl">
+                <div className="mx-auto flex w-full max-w-4xl flex-col gap-8">
+                  {pastSteps.length > 0 && (
+                    <ol className="flex flex-col gap-7">
+                      {pastSteps.map((s) => (
+                        <li key={s.id} className="flex flex-col gap-3">
+                          <Turn role="ai" label={s.step_name}>
+                            {s.question_shown}
                           </Turn>
-                        )}
 
-                        {s.agent_output && <AgentStep step={s} />}
-                      </li>
-                    ))}
-                  </ol>
-                )}
+                          {s.user_answer ? (
+                            <Turn role="user">{s.user_answer}</Turn>
+                          ) : (
+                            <Turn role="user">
+                              <span className="text-muted-foreground italic">
+                                （時間到，這題沒有作答）
+                              </span>
+                            </Turn>
+                          )}
 
-                {currentQuestion}
+                          {s.agent_output && <AgentStep step={s} yieldLabel={yieldLabel} />}
+                        </li>
+                      ))}
+                    </ol>
+                  )}
 
-                {/* The run's own closing turn, not a banner bolted under the
-                    conversation — with the way onward in the corner of the
-                    message, where a reply's action belongs. */}
-                {finished && (
-                  <Turn role="ai" label="收斂完成">
-                    <div className="flex flex-col gap-3">
-                      <p>這個方法跑完了，收斂出的候選想法已經加進想法牆。</p>
-                      <div className="flex justify-end">
-                        <Button size="sm" onClick={onGoToIdeas}>
-                          前往想法牆
-                          <ArrowRightIcon />
-                        </Button>
-                      </div>
-                    </div>
-                  </Turn>
-                )}
+                  {currentQuestion}
 
-                {/* All the answers survived — only the final convergence call
-                    came back empty, so this replays just that one call. */}
-                {run.status === 'failed' && (
-                  <div className="flex flex-col gap-4">
-                    <Notice
-                      tone="destructive"
-                      title="收斂失敗：AI 這次沒有產出任何候選想法"
-                      actions={
-                        <>
-                          <Button size="sm" onClick={onRetryFinalize} disabled={submitting}>
-                            <RotateCcwIcon />
-                            重新收斂
-                          </Button>
-                          <Button
-                            size="sm"
-                            variant="outline"
-                            onClick={onGoToIdeas}
-                            disabled={submitting}
-                          >
-                            先去想法牆
-                          </Button>
-                        </>
-                      }
-                    >
-                      你上面的回答都還在，重新收斂只會再跑一次最後那一步，不用重新回答一遍。
-                    </Notice>
-                    {error && <ErrorState title="重新收斂時出錯" detail={error} />}
-                    {submitting && (
-                      <div className="flex flex-col gap-3">
-                        <AiWorking
-                          label={stopping ? '正在停止這次呼叫' : 'AI 正在重新收斂'}
-                          detail={
-                            stopping ? '收掉 CLI 那邊還在跑的呼叫' : '把整段對話整理成候選想法'
-                          }
-                        />
-                        <AiReasoning text={thinking} streaming />
-                        <div className="flex justify-end">
-                          <Button size="sm" variant="outline" onClick={onStop} disabled={stopping}>
-                            <SquareIcon />
-                            停止
-                          </Button>
+                  {/* The run's own closing turn, not a banner bolted under the
+                      conversation — with the way onward in the corner of the
+                      message, where a reply's action belongs. */}
+                  {finished && (
+                    <Turn role="ai" label="彙整完成">
+                      {finishedContent ?? (
+                        <div className="flex flex-col gap-3">
+                          <p>這個方法跑完了，彙整出的候選想法已經加進想法庫。</p>
+                          <div className="flex justify-end">
+                            <Button size="sm" onClick={onGoToIdeas}>
+                              前往想法庫
+                              <ArrowRightIcon />
+                            </Button>
+                          </div>
                         </div>
-                      </div>
-                    )}
-                  </div>
-                )}
+                      )}
+                    </Turn>
+                  )}
+
+                  {/* All the answers survived — only the final convergence call
+                      came back empty, so this replays just that one call. */}
+                  {run.status === 'failed' && (
+                    <div className="flex flex-col gap-4">
+                      <Notice
+                        tone="destructive"
+                        title={`彙整失敗：AI 這次沒有整理出任何${outcomeLabel}`}
+                        actions={
+                          <>
+                            <Button size="sm" onClick={onRetryFinalize} disabled={submitting}>
+                              <RotateCcwIcon />
+                              重新彙整
+                            </Button>
+                            {!discovery && (
+                              <Button
+                                size="sm"
+                                variant="outline"
+                                onClick={onGoToIdeas}
+                                disabled={submitting}
+                              >
+                                先去想法庫
+                              </Button>
+                            )}
+                          </>
+                        }
+                      >
+                        你上面的回答都還在，重新彙整只會再跑一次最後那一步，不用重新回答一遍。
+                      </Notice>
+                      {error && <ErrorState title="重新彙整時出錯" detail={error} />}
+                      {submitting && (
+                        <div className="flex flex-col gap-3">
+                          <AiWorking
+                            label={stopping ? '正在停止這次呼叫' : 'AI 正在重新彙整'}
+                            detail={
+                              stopping ? '收掉 CLI 那邊還在跑的呼叫' : `把整段對話整理成${outcomeLabel}`
+                            }
+                          />
+                          <AiReasoning text={thinking} streaming />
+                          <div className="flex justify-end">
+                            <Button size="sm" variant="outline" onClick={onStop} disabled={stopping}>
+                              <SquareIcon />
+                              停止
+                            </Button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
               <ChatContainerScrollAnchor />
             </ChatContainerContent>
@@ -389,10 +425,17 @@ export function FrameworkRunView({
           {/* No rule above the composer. The line made the box read as a
               separate module bolted under the conversation, when answering *is*
               the conversation — the blur and the background are enough to keep
-              scrolled text from running into it. */}
+              scrolled text from running into it.
+              The bottom padding matches `ScreenBody`'s (py-8 / sm:py-10) rather
+              than a footer's py-4: once the conversation starts, the box is
+              where the eye works, and parked flush against the window's bottom
+              edge it read as dropped there — every other screen's content stops
+              this far above the edge. */}
           {composer && (
-            <div className="animate-in fade-in slide-in-from-bottom-2 shrink-0 bg-background/85 px-5 py-4 backdrop-blur-md duration-300 sm:px-8">
-              <div className="mx-auto w-full max-w-4xl">{composer}</div>
+            <div className="animate-in fade-in slide-in-from-bottom-2 shrink-0 bg-background/85 px-5 pt-4 pb-8 backdrop-blur-md duration-300 sm:px-8 sm:pb-10">
+              <div className="mx-auto w-full max-w-6xl">
+                <div className="mx-auto w-full max-w-4xl">{composer}</div>
+              </div>
             </div>
           )}
         </>
@@ -409,7 +452,7 @@ export function FrameworkRunView({
  * the shape prompt-kit's `Tool` already renders — so the app's own agent state
  * looks like agent state, not like another quote block.
  */
-function AgentStep({ step }: { step: MethodStep }) {
+function AgentStep({ step, yieldLabel }: { step: MethodStep; yieldLabel: string }) {
   const output = step.agent_output
   if (!output) return null
 
@@ -425,7 +468,7 @@ function AgentStep({ step }: { step: MethodStep }) {
 
       {fragments.length > 0 && (
         <div className="flex flex-col gap-2 rounded-xl border border-ai-border bg-ai-muted/40 p-3.5">
-          <Eyebrow className="text-ai">從這一步撈到的想法碎片</Eyebrow>
+          <Eyebrow className="text-ai">從這一步撈到的{yieldLabel}</Eyebrow>
           <ul className="flex flex-col gap-1.5">
             {fragments.map((f, i) => (
               <li key={i} className="flex gap-2 text-sm leading-relaxed">

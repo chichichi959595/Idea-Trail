@@ -11,9 +11,10 @@ from app.agents.method_selector import (
 
 
 class FakeSession:
-    def __init__(self, has_clear_problem=None, has_existing_product=None):
+    def __init__(self, has_clear_problem=None, has_existing_product=None, team_size=None):
         self.has_clear_problem = has_clear_problem
         self.has_existing_product = has_existing_product
+        self.team_size = team_size
 
 
 @pytest.mark.parametrize("clear", [True, False, None])
@@ -56,3 +57,37 @@ def test_always_returns_real_methods():
     result = finalize_selection(["no_such_method"] * 5, [])
     assert len(result) == RECOMMENDATION_COUNT
     assert all(m in METHOD_ORDER for m in result)
+
+
+def test_relay_needs_a_room_without_a_direction():
+    """多人接龍 only earns a point from the rules when there are enough people
+    to pass papers around *and* no direction yet."""
+    from app.agents.method_selector import score_methods
+
+    assert score_methods(FakeSession(False, None, team_size=4))["relay"] == 1
+    assert score_methods(FakeSession(True, None, team_size=6))["relay"] == 0
+
+
+@pytest.mark.parametrize("team_size", [0, 1])
+def test_a_team_too_small_for_the_relay_is_never_offered_it(team_size):
+    from app.agents.method_selector import build_prompt, score_methods
+
+    session = FakeSession(False, None, team_size=team_size)
+    for attr in ("time_budget", "tech_background", "domain_pref", "constraints_text",
+                 "clear_problem_text", "existing_product_text"):
+        setattr(session, attr, None)
+
+    assert "relay" not in score_methods(session)
+    prompt = build_prompt(session)
+    assert "relay" not in prompt.allowed
+    assert "relay" not in prompt.schema["properties"]["items"]["items"]["properties"]["method"]["enum"]
+    assert "多人接龍" not in prompt.user_prompt
+    # Even if the model names it anyway (the enum isn't enforced on every route).
+    assert "relay" not in finalize_selection(["relay"], prompt.rule_ranking, allowed=prompt.allowed)
+
+
+def test_an_unanswered_team_size_rules_nothing_out():
+    from app.agents.framework import eligible_methods
+
+    assert eligible_methods(None) == METHOD_ORDER
+    assert eligible_methods(2) == METHOD_ORDER

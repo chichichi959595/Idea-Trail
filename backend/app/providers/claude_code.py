@@ -17,7 +17,7 @@ _TIMEOUT_SECONDS = 180
 # model in each tier without this file needing an edit every release.
 _MODELS = [
     ModelOption("sonnet", "Sonnet", "速度與品質的平衡點，這裡的預設值"),
-    ModelOption("opus", "Opus", "推理最強、也最慢最吃額度，適合最後收斂"),
+    ModelOption("opus", "Opus", "推理最強、也最慢最吃額度，適合最後彙整"),
     ModelOption("haiku", "Haiku", "最快最省，適合步驟多的方法"),
     ModelOption("fable", "Fable", "寫作導向，文字描述較有畫面"),
 ]

@@ -3,7 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Optional
 
-from app.db.models import IdeationSession, MethodStep
+from app.db.models import IdeationSession, MethodStep, PainPoint
 
 
 @dataclass
@@ -13,6 +13,11 @@ class StepSpec:
     timer_seconds: Optional[int] = None
     """Countdown for this step, if the method is time-boxed. Lives here rather
     than in the frontend so the pacing is part of the method's definition."""
+    analyze: bool = True
+    """Whether answering this step calls the model (relevance gate, analysis,
+    fragments). False just records the answer and moves on — for steps whose
+    whole point is pace, where a blocking call between them breaks the method.
+    Such answers are judged once, at finalize."""
 
 
 STEP_SYSTEM_PROMPT_TEMPLATE = """你是「{method_label}」發想引導流程裡的其中一個步驟 Agent。
@@ -50,9 +55,10 @@ STEP_OUTPUT_SCHEMA = {
     "additionalProperties": False,
 }
 
-FINALIZE_SYSTEM_PROMPT_TEMPLATE = """你是「{method_label}」發想引導流程的收斂步驟 Agent。
+FINALIZE_SYSTEM_PROMPT_TEMPLATE = """你是「{method_label}」發想引導流程的彙整步驟 Agent。
 使用者已經走完所有步驟，你會看到完整的問答歷程與每一步產生的候選想法片段。
-你的工作是去重、合併相近的片段，收斂成 2~4 個具體、彼此有區隔的 Project Concept。
+
+{material}
 
 每個 Concept 要有：
 - title（10~20字）：直接描述核心功能本身，不要取產品名、品牌名、或可愛擬人化綽號
@@ -61,31 +67,77 @@ FINALIZE_SYSTEM_PROMPT_TEMPLATE = """你是「{method_label}」發想引導流�
 - description（2~3 句，精簡）：講清楚解決什麼問題、給誰用、為什麼可行即可，
   去掉「這個工具能夠」「可以讓使用者」「非常適合」之類的贅字和客套話，直接切入重點。
 
+這一步只負責整理，不負責評價：不要排序、不要挑出「比較好的」、
+也不要因為覺得某個想法弱就把它丟掉。候選提案的評分與篩選是想法牆之後獨立的階段要做的事，
+由使用者和另一個 agent 一起進行。
+
 一律使用繁體中文回答。只回傳符合 JSON schema 的結構化輸出，不要有多餘文字。"""
 
-FINALIZE_OUTPUT_SCHEMA = {
-    "type": "object",
-    "properties": {
-        "ideas": {
-            "type": "array",
-            # Without a floor, `{"ideas": []}` satisfies the schema — the model
-            # can return nothing at all and still look like a successful call.
-            "minItems": 2,
-            "maxItems": 4,
-            "items": {
-                "type": "object",
-                "properties": {
-                    "title": {"type": "string"},
-                    "description": {"type": "string"},
+DEFAULT_FINALIZE_MATERIAL = (
+    "你的工作是去重、合併相近的片段，彙整成 2~4 個具體、彼此有區隔的 Project Concept。"
+)
+"""What the finalize call is told to do when a method hasn't defined its own.
+
+The eight methods that haven't been tuned yet all use this, so it is worded
+exactly as the single shared instruction used to be — adopting `finalize_spec`
+changed nothing for them.
+"""
+
+
+@dataclass
+class FinalizeSpec:
+    """How one method's finished run becomes candidates.
+
+    `material` says what this run's transcript actually is and what shape the
+    candidates should take — the part that genuinely differs per method. The
+    quality rules (naming, brevity, no ranking) stay in the shared template so
+    a fix to them lands once rather than ten times.
+
+    The count is stated twice on purpose: `min_items`/`max_items` go into the
+    JSON schema, and `material` states it in prose. The Anthropic route strips
+    array-length keywords from the schema (see `_sanitize_schema`), so there
+    the prose is the only thing carrying the count.
+    """
+
+    material: str
+    min_items: int
+    max_items: int
+
+
+def finalize_output_schema(min_items: int, max_items: int) -> dict:
+    """The finalize schema for a given candidate count.
+
+    Built per method rather than shared, because the natural yield differs:
+    Crazy 8s should hand back one candidate per solution the user wrote, while
+    a method that deep-dives a single problem should hand back a fixed few.
+    """
+    return {
+        "type": "object",
+        "properties": {
+            "ideas": {
+                "type": "array",
+                # Without a floor, `{"ideas": []}` satisfies the schema — the model
+                # can return nothing at all and still look like a successful call.
+                "minItems": min_items,
+                "maxItems": max_items,
+                "items": {
+                    "type": "object",
+                    "properties": {
+                        "title": {"type": "string"},
+                        "description": {"type": "string"},
+                    },
+                    "required": ["title", "description"],
+                    "additionalProperties": False,
                 },
-                "required": ["title", "description"],
-                "additionalProperties": False,
-            },
-        }
-    },
-    "required": ["ideas"],
-    "additionalProperties": False,
-}
+            }
+        },
+        "required": ["ideas"],
+        "additionalProperties": False,
+    }
+
+
+FINALIZE_OUTPUT_SCHEMA = finalize_output_schema(2, 4)
+"""The shape a method gets when it hasn't overridden `finalize_spec`."""
 
 
 def render_session_context(session: IdeationSession) -> str:
@@ -97,6 +149,23 @@ def render_session_context(session: IdeationSession) -> str:
         f"限制條件: {session.constraints_text}" if session.constraints_text else None,
     ]
     return "\n".join(p for p in parts if p) or "(未提供)"
+
+
+def render_pain_point(pain_point: PainPoint | None) -> str:
+    """The problem this run sets out to solve, as a prompt section — or nothing,
+    for a run the team started without one."""
+    if pain_point is None:
+        return ""
+    parts = [
+        f"痛點: {pain_point.statement}",
+        f"誰會遇到: {pain_point.who}" if pain_point.who else None,
+        f"發生情境: {pain_point.context}" if pain_point.context else None,
+        f"現在怎麼應付: {pain_point.current_workaround}"
+        if pain_point.current_workaround
+        else None,
+    ]
+    body = "\n".join(p for p in parts if p)
+    return f"# 這一輪要解決的痛點\n{body}\n所有想法都要扣回這個痛點。\n\n"
 
 
 def render_history(steps: list[MethodStep]) -> str:
@@ -135,6 +204,15 @@ class FrameworkAgent:
     tutorial_how_to: str = ""
     """How to actually play it inside this flow."""
     steps: list[StepSpec]
+    mode: str = "solo"
+    """"solo" = one person answers `steps` in turn. "relay" = several phones
+    write at once (多人接龍); such a run opens a lobby instead of a first step."""
+    min_team_size: Optional[int] = None
+    """Below this many people the method can't be played at all, so the
+    selector never recommends it to a team that says it's smaller."""
+    stage: str = "ideation"
+    """"ideation" = 專案發想, ends in ideas on the wall. "discovery" = 痛點發想,
+    ends in pain points in the library, and is never offered as a method."""
 
     @classmethod
     def catalog_entry(cls) -> dict:
@@ -145,6 +223,8 @@ class FrameworkAgent:
             "description": cls.description,
             "tutorial": {"intro": cls.tutorial_intro, "how_to": cls.tutorial_how_to},
             "step_count": len(cls.steps),
+            "mode": cls.mode,
+            "stage": cls.stage,
         }
 
     def question_for(self, index: int) -> str:
@@ -156,22 +236,45 @@ class FrameworkAgent:
         session: IdeationSession,
         prior_steps: list[MethodStep],
         user_answer: str,
+        pain_point: PainPoint | None = None,
     ) -> tuple[str, str, dict]:
         system_prompt = STEP_SYSTEM_PROMPT_TEMPLATE.format(method_label=self.method_label)
         step = self.steps[index]
         user_prompt = (
             f"# 團隊基本資訊\n{render_session_context(session)}\n\n"
+            f"{render_pain_point(pain_point)}"
             f"# 目前為止的發想歷程\n{render_history(prior_steps)}\n\n"
             f"# 這一步 [{step.name}]\n問題: {step.question}\n使用者回答: {user_answer}"
         )
         return system_prompt, user_prompt, STEP_OUTPUT_SCHEMA
 
+    def finalize_spec(self, all_steps: list[MethodStep]) -> FinalizeSpec:
+        """What this method's material is, and how many candidates it yields.
+
+        The one place a method gets to disagree with the others about its own
+        output. Overriding this is preferred over overriding
+        `build_finalize_prompt`: the shared quality rules and the audit-log
+        shape stay put, and the only thing that varies is the part that
+        genuinely varies.
+
+        It takes the finished steps because the count is not always a constant
+        — Crazy 8s yields one candidate per solution the user actually wrote.
+        """
+        return FinalizeSpec(DEFAULT_FINALIZE_MATERIAL, 2, 4)
+
     def build_finalize_prompt(
-        self, session: IdeationSession, all_steps: list[MethodStep]
+        self,
+        session: IdeationSession,
+        all_steps: list[MethodStep],
+        pain_point: PainPoint | None = None,
     ) -> tuple[str, str, dict]:
-        system_prompt = FINALIZE_SYSTEM_PROMPT_TEMPLATE.format(method_label=self.method_label)
+        spec = self.finalize_spec(all_steps)
+        system_prompt = FINALIZE_SYSTEM_PROMPT_TEMPLATE.format(
+            method_label=self.method_label, material=spec.material
+        )
         user_prompt = (
             f"# 團隊基本資訊\n{render_session_context(session)}\n\n"
+            f"{render_pain_point(pain_point)}"
             f"# 完整發想歷程\n{render_history(all_steps)}"
         )
-        return system_prompt, user_prompt, FINALIZE_OUTPUT_SCHEMA
+        return system_prompt, user_prompt, finalize_output_schema(spec.min_items, spec.max_items)

@@ -1,0 +1,473 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>IdeaTrail 發想流程圖</title>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  * { margin:0; padding:0; box-sizing:border-box; }
+  body { font-family:'JetBrains Mono', monospace; background:#020617; min-height:100vh; padding:2rem; color:white; }
+  .container { max-width:1340px; margin:0 auto; }
+  .header { margin-bottom:2rem; }
+  .header-row { display:flex; align-items:center; gap:1rem; margin-bottom:0.5rem; }
+  .pulse-dot { width:12px; height:12px; background:#22d3ee; border-radius:50%; animation:pulse 2s infinite; }
+  @keyframes pulse { 0%,100%{opacity:1;} 50%{opacity:0.5;} }
+  h1 { font-size:1.5rem; font-weight:700; letter-spacing:-0.025em; }
+  .subtitle { color:#94a3b8; font-size:0.875rem; margin-left:1.75rem; }
+  .diagram-container { background:rgba(15,23,42,0.5); border-radius:1rem; border:1px solid #1e293b; padding:1.5rem; overflow-x:auto; }
+  svg { width:100%; min-width:1240px; display:block; }
+  .section-title { margin-top:2.5rem; margin-bottom:1rem; font-size:1.05rem; font-weight:700; color:#e2e8f0; display:flex; align-items:center; gap:.6rem; }
+  .section-title .bar { width:4px; height:16px; background:#22d3ee; border-radius:2px; }
+  .cards { display:grid; grid-template-columns:repeat(auto-fit,minmax(300px,1fr)); gap:1rem; margin-top:1rem; }
+  .card { background:rgba(15,23,42,0.5); border-radius:0.75rem; border:1px solid #1e293b; padding:1.25rem; }
+  .card-header { display:flex; align-items:center; gap:0.5rem; margin-bottom:0.75rem; }
+  .card-dot { width:8px; height:8px; border-radius:50%; flex-shrink:0; }
+  .card-dot.cyan{background:#22d3ee;} .card-dot.emerald{background:#34d399;}
+  .card-dot.violet{background:#a78bfa;} .card-dot.amber{background:#fbbf24;}
+  .card-dot.rose{background:#fb7185;} .card-dot.orange{background:#fb923c;}
+  .card-dot.slate{background:#94a3b8;}
+  .card h3 { font-size:0.9rem; font-weight:600; }
+  .card .desc { color:#64748b; font-size:0.72rem; margin-bottom:0.6rem; line-height:1.5; }
+  .card ol { color:#cbd5e1; font-size:0.76rem; padding-left:1.1rem; line-height:1.75; }
+  .card ol li::marker { color:#64748b; }
+  .card .tag { display:inline-block; font-size:0.65rem; color:#fbbf24; border:1px solid #78350f; border-radius:4px; padding:1px 6px; margin-bottom:.5rem; }
+  details.m-card { background:rgba(15,23,42,0.5); border-radius:0.75rem; border:1px solid #1e293b; padding:1rem 1.25rem; margin-bottom:0.75rem; }
+  details.m-card summary { cursor:pointer; list-style:none; display:flex; align-items:center; gap:.6rem; font-weight:600; font-size:0.85rem; }
+  details.m-card summary::-webkit-details-marker { display:none; }
+  details.m-card summary .arrow { color:#475569; font-size:.7rem; transition:transform .15s; margin-left:auto; }
+  details.m-card[open] summary .arrow { transform:rotate(90deg); }
+  details.m-card .desc { color:#64748b; font-size:0.74rem; margin:0.6rem 0 0.8rem 0; line-height:1.55; }
+  details.m-card ol { color:#cbd5e1; font-size:0.78rem; padding-left:1.2rem; line-height:1.85; }
+  details.m-card ol li::marker { color:#475569; }
+  .meta { color:#475569; font-size:0.68rem; margin-top:.5rem; }
+  .footer { text-align:center; margin-top:2rem; color:#475569; font-size:0.75rem; }
+</style>
+</head>
+<body>
+<div class="container">
+  <div class="header">
+    <div class="header-row">
+      <div class="pulse-dot"></div>
+      <h1>IdeaTrail — AI 引導式專案發想系統 流程圖</h1>
+    </div>
+    <p class="subtitle">使用者從「開始設定」到「想法牆」實際會走的路徑，以及每個 Agent 在每一步問了什麼問題</p>
+  </div>
+
+  <!-- MAIN FLOW DIAGRAM -->
+  <div class="diagram-container">
+    <svg viewBox="0 0 1340 1480">
+      <defs>
+        <marker id="arrow" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+          <polygon points="0 0, 10 3.5, 0 7" fill="#64748b" />
+        </marker>
+        <marker id="arrowCyan" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+          <polygon points="0 0, 10 3.5, 0 7" fill="#22d3ee" />
+        </marker>
+        <marker id="arrowAmber" markerWidth="10" markerHeight="7" refX="9" refY="3.5" orient="auto">
+          <polygon points="0 0, 10 3.5, 0 7" fill="#fbbf24" />
+        </marker>
+        <pattern id="grid" width="40" height="40" patternUnits="userSpaceOnUse">
+          <path d="M 40 0 L 0 0 0 40" fill="none" stroke="#1e293b" stroke-width="0.5"/>
+        </pattern>
+      </defs>
+      <rect width="100%" height="100%" fill="url(#grid)" />
+
+      <!-- STEP 1: 開始設定 -->
+      <rect x="40" y="30" width="300" height="110" rx="8" fill="rgba(8,51,68,0.4)" stroke="#22d3ee" stroke-width="1.5"/>
+      <text x="190" y="54" fill="white" font-size="13" font-weight="700" text-anchor="middle">① 開始設定</text>
+      <text x="55" y="74" fill="#94a3b8" font-size="8.5">團隊人數 / 可用時間 / 技術背景</text>
+      <text x="55" y="88" fill="#94a3b8" font-size="8.5">領域偏好 / 限制條件</text>
+      <text x="55" y="102" fill="#94a3b8" font-size="8.5">是否已有明確問題？是否有既有產品想改造？</text>
+      <text x="55" y="118" fill="#22d3ee" font-size="8" font-weight="600">已有痛點的團隊：直接跳到③專案發想</text>
+
+      <!-- branch diamond -->
+      <polygon points="190,170 260,215 190,260 120,215" fill="rgba(30,41,59,0.6)" stroke="#94a3b8" stroke-width="1.5"/>
+      <text x="190" y="211" fill="white" font-size="9.5" text-anchor="middle" font-weight="600">已經有</text>
+      <text x="190" y="223" fill="white" font-size="9.5" text-anchor="middle" font-weight="600">痛點？</text>
+      <line x1="190" y1="140" x2="190" y2="168" stroke="#64748b" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+      <!-- No -> pain discovery -->
+      <line x1="120" y1="215" x2="40" y2="215" stroke="#64748b" stroke-width="1.5"/>
+      <line x1="40" y1="215" x2="40" y2="300" stroke="#64748b" stroke-width="1.5" marker-end="url(#arrow)"/>
+      <text x="48" y="260" fill="#94a3b8" font-size="8.5">沒有</text>
+
+      <rect x="40" y="300" width="300" height="150" rx="8" fill="rgba(251,191,36,0.08)" stroke="#fbbf24" stroke-width="1.5" stroke-dasharray="6,3"/>
+      <text x="190" y="322" fill="white" font-size="13" font-weight="700" text-anchor="middle">② 痛點發想（discovery，可跳過）</text>
+      <text x="55" y="340" fill="#94a3b8" font-size="8.3">5 個回想線索依序問：</text>
+      <text x="60" y="353" fill="#cbd5e1" font-size="8">1. 一天裡哪一刻嘆氣／皺眉？</text>
+      <text x="60" y="366" fill="#cbd5e1" font-size="8">2. 用 Excel／便利貼土法煉鋼撐住什麼事？</text>
+      <text x="60" y="379" fill="#cbd5e1" font-size="8">3. 最近在等什麼人／什麼東西？</text>
+      <text x="60" y="392" fill="#cbd5e1" font-size="8">4. 每週重複做、或一直被問同一件事？</text>
+      <text x="60" y="405" fill="#cbd5e1" font-size="8">5. 身邊的人最近抱怨過什麼？</text>
+      <text x="55" y="422" fill="#94a3b8" font-size="7.8">「想不到」不算答非所問，AI 會換角度提示；</text>
+      <text x="55" y="434" fill="#94a3b8" font-size="7.8">亂打字／離題才會被退回要求重答</text>
+
+      <line x1="190" y1="450" x2="190" y2="480" stroke="#fbbf24" stroke-width="1.5" marker-end="url(#arrowAmber)"/>
+      <rect x="40" y="480" width="300" height="60" rx="8" fill="rgba(76,29,149,0.4)" stroke="#a78bfa" stroke-width="1.5"/>
+      <text x="190" y="502" fill="white" font-size="11" font-weight="700" text-anchor="middle">彙整 → 寫入痛點庫</text>
+      <text x="190" y="518" fill="#94a3b8" font-size="8" text-anchor="middle">1~5 筆：statement / who / context / workaround</text>
+      <text x="190" y="530" fill="#94a3b8" font-size="7.5" text-anchor="middle">使用者從痛點庫挑一筆帶進下一步</text>
+
+      <!-- Yes -> straight down -->
+      <line x1="260" y1="215" x2="700" y2="215" stroke="#64748b" stroke-width="1.5"/>
+      <text x="480" y="208" fill="#94a3b8" font-size="8.5">是 → 直接帶著這個痛點</text>
+
+      <line x1="700" y1="215" x2="700" y2="300" stroke="#64748b" stroke-width="1.5"/>
+      <line x1="190" y1="540" x2="190" y2="600" stroke="#a78bfa" stroke-width="1.5"/>
+      <line x1="190" y1="600" x2="700" y2="600" stroke="#a78bfa" stroke-width="1.5"/>
+      <line x1="700" y1="600" x2="700" y2="640" stroke="#a78bfa" stroke-width="1.5" marker-end="url(#arrow)"/>
+      <line x1="700" y1="300" x2="700" y2="640" stroke="#64748b" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+      <!-- STEP 3: Method Selector -->
+      <rect x="420" y="30" width="560" height="170" rx="8" fill="rgba(6,78,59,0.4)" stroke="#34d399" stroke-width="1.5"/>
+      <text x="700" y="54" fill="white" font-size="13" font-weight="700" text-anchor="middle">Method Selector Agent（跟①同一頁，按下「開始發想」時觸發）</text>
+      <text x="438" y="76" fill="#94a3b8" font-size="8.3">規則式參考排序（看得懂兩個是非題）＋ LLM 讀團隊自由填的文字，</text>
+      <text x="438" y="89" fill="#94a3b8" font-size="8.3">兩者一起決定最終順序：</text>
+      <text x="450" y="104" fill="#cbd5e1" font-size="8">• 沒有明確問題 → 痛點導向／使用者旅程／HMW／混搭／Crazy8s 優先</text>
+      <text x="450" y="117" fill="#cbd5e1" font-size="8">• 有既有產品想改造 → SCAMPER／逆向思考／類比法 優先</text>
+      <text x="450" y="130" fill="#cbd5e1" font-size="8">• 技術導向文字描述（規則看不懂，交給 LLM 判斷）→ 能力對應問題</text>
+      <text x="450" y="143" fill="#cbd5e1" font-size="8">• 已有方向只是想不出新意 → 隨機刺激</text>
+      <text x="450" y="156" fill="#cbd5e1" font-size="8">• 現場 2 人以上、沒方向 → 多人接龍（1 人時不會出現）</text>
+      <text x="438" y="175" fill="#fbbf24" font-size="8">輸出：固定推薦 3 個方法＋各自的推薦理由＋「跟參考排序差在哪」的說明</text>
+      <text x="438" y="189" fill="#64748b" font-size="7.5">使用者也可以不理推薦，自己從下方 11 種方法任選其一（多人接龍需 2 人以上）</text>
+
+      <line x1="700" y1="640" x2="700" y2="700" stroke="#64748b" stroke-width="1.5" marker-end="url(#arrow)"/>
+      <text x="710" y="675" fill="#94a3b8" font-size="8.5">選一個方法 → 進入③專屬引導流程</text>
+
+      <!-- STEP 3 header -->
+      <text x="40" y="730" fill="white" font-size="13" font-weight="700">③ 專案發想 — Framework Agent（11 種方法之一，逐步一問一答）</text>
+      <text x="40" y="746" fill="#94a3b8" font-size="8.5">每一步：使用者答 → 先判斷是否切題（離題會被請求重答，可強制送出）→ 分析＋產出 1~3 個想法片段 → 走完全部步驟後彙整成候選想法</text>
+
+      <!-- method grid: 4 cols x 3 rows -->
+      <!-- row 1 -->
+      <g>
+        <rect x="40" y="770" width="300" height="100" rx="6" fill="rgba(6,78,59,0.25)" stroke="#34d399" stroke-width="1.2"/>
+        <text x="190" y="790" fill="white" font-size="10.5" font-weight="700" text-anchor="middle">痛點導向（6 步）</text>
+        <text x="190" y="804" fill="#94a3b8" font-size="7.6" text-anchor="middle">麻煩的事→誰遇到→現在怎麼解</text>
+        <text x="190" y="816" fill="#94a3b8" font-size="7.6" text-anchor="middle">→為何不好→多常發生→解決價值</text>
+        <text x="190" y="832" fill="#64748b" font-size="7.3" text-anchor="middle">彙整成 3 個「同一痛點」的不同解法</text>
+        <text x="190" y="858" fill="#64748b" font-size="7" text-anchor="middle">沒方向時優先推薦</text>
+      </g>
+      <g>
+        <rect x="360" y="770" width="300" height="100" rx="6" fill="rgba(6,78,59,0.25)" stroke="#34d399" stroke-width="1.2"/>
+        <text x="510" y="790" fill="white" font-size="10.5" font-weight="700" text-anchor="middle">使用者旅程（8 步）</text>
+        <text x="510" y="804" fill="#94a3b8" font-size="7.6" text-anchor="middle">發生情況→經歷步驟→每步做什麼→最麻煩的一步</text>
+        <text x="510" y="816" fill="#94a3b8" font-size="7.6" text-anchor="middle">→造成影響→最想改什麼→可改善處→希望工具做到</text>
+        <text x="510" y="832" fill="#64748b" font-size="7.3" text-anchor="middle">彙整成 3 個對準流程中某一步的 Concept</text>
+        <text x="510" y="858" fill="#64748b" font-size="7" text-anchor="middle">沒方向時優先推薦</text>
+      </g>
+      <g>
+        <rect x="680" y="770" width="300" height="100" rx="6" fill="rgba(251,191,36,0.1)" stroke="#fbbf24" stroke-width="1.2"/>
+        <text x="830" y="790" fill="white" font-size="10.5" font-weight="700" text-anchor="middle">SCAMPER（8 步）</text>
+        <text x="830" y="804" fill="#94a3b8" font-size="7.6" text-anchor="middle">先講對象 → 替代／結合／調整／</text>
+        <text x="830" y="816" fill="#94a3b8" font-size="7.6" text-anchor="middle">修改／其他用途／消除／反轉</text>
+        <text x="830" y="858" fill="#64748b" font-size="7" text-anchor="middle">有既有產品想改造時優先推薦</text>
+      </g>
+      <g>
+        <rect x="1000" y="770" width="300" height="100" rx="6" fill="rgba(251,191,36,0.1)" stroke="#fbbf24" stroke-width="1.2"/>
+        <text x="1150" y="790" fill="white" font-size="10.5" font-weight="700" text-anchor="middle">逆向思考（4 步）</text>
+        <text x="1150" y="804" fill="#94a3b8" font-size="7.6" text-anchor="middle">情境是什麼 → 想3~5個最爛點子</text>
+        <text x="1150" y="816" fill="#94a3b8" font-size="7.6" text-anchor="middle">→最討厭的地方→挑一個調轉成好點子</text>
+        <text x="1150" y="858" fill="#64748b" font-size="7" text-anchor="middle">有既有產品想改造時優先推薦</text>
+      </g>
+
+      <!-- row 2 -->
+      <g>
+        <rect x="40" y="890" width="300" height="100" rx="6" fill="rgba(251,191,36,0.1)" stroke="#fbbf24" stroke-width="1.2"/>
+        <text x="190" y="910" fill="white" font-size="10.5" font-weight="700" text-anchor="middle">類比法（4 步）</text>
+        <text x="190" y="924" fill="#94a3b8" font-size="7.6" text-anchor="middle">描述問題 → 找結構相似的其他領域</text>
+        <text x="190" y="936" fill="#94a3b8" font-size="7.6" text-anchor="middle">→那個領域怎麼解→把邏輯借回來套用</text>
+        <text x="190" y="978" fill="#64748b" font-size="7" text-anchor="middle">有既有產品想改造時優先推薦</text>
+      </g>
+      <g>
+        <rect x="360" y="890" width="300" height="100" rx="6" fill="rgba(15,23,42,0.5)" stroke="#94a3b8" stroke-width="1.2"/>
+        <text x="510" y="910" fill="white" font-size="10.5" font-weight="700" text-anchor="middle">能力對應問題（4 步）</text>
+        <text x="510" y="924" fill="#94a3b8" font-size="7.6" text-anchor="middle">拿手技術是什麼 → 獨特優勢</text>
+        <text x="510" y="936" fill="#94a3b8" font-size="7.6" text-anchor="middle">→誰的問題需要它→拿掉技術濾鏡誠實檢查</text>
+        <text x="510" y="978" fill="#64748b" font-size="7" text-anchor="middle">技術背景文字看起來技術導向時</text>
+      </g>
+      <g>
+        <rect x="680" y="890" width="300" height="100" rx="6" fill="rgba(6,78,59,0.25)" stroke="#34d399" stroke-width="1.2"/>
+        <text x="830" y="910" fill="white" font-size="10.5" font-weight="700" text-anchor="middle">HMW（4 步）</text>
+        <text x="830" y="924" fill="#94a3b8" font-size="7.6" text-anchor="middle">原始問題 → 改寫成 How might we…</text>
+        <text x="830" y="936" fill="#94a3b8" font-size="7.6" text-anchor="middle">→盡量列解法→挑一個最想深入的</text>
+        <text x="830" y="978" fill="#64748b" font-size="7" text-anchor="middle">沒方向時優先推薦</text>
+      </g>
+      <g>
+        <rect x="1000" y="890" width="300" height="100" rx="6" fill="rgba(6,78,59,0.25)" stroke="#34d399" stroke-width="1.2"/>
+        <text x="1150" y="910" fill="white" font-size="10.5" font-weight="700" text-anchor="middle">混搭法 Mash-up（4 步）</text>
+        <text x="1150" y="924" fill="#94a3b8" font-size="7.6" text-anchor="middle">列 3 個對象 → 列 3 個痛點</text>
+        <text x="1150" y="936" fill="#94a3b8" font-size="7.6" text-anchor="middle">→列 3 個技術→各挑一個硬湊在一起</text>
+        <text x="1150" y="978" fill="#64748b" font-size="7" text-anchor="middle">沒方向時優先推薦</text>
+      </g>
+
+      <!-- row 3 -->
+      <g>
+        <rect x="40" y="1010" width="300" height="100" rx="6" fill="rgba(15,23,42,0.5)" stroke="#94a3b8" stroke-width="1.2"/>
+        <text x="190" y="1030" fill="white" font-size="10.5" font-weight="700" text-anchor="middle">隨機刺激（5 步）</text>
+        <text x="190" y="1044" fill="#94a3b8" font-size="7.6" text-anchor="middle">方向是什麼 → 隨機詞1（硬套）</text>
+        <text x="190" y="1056" fill="#94a3b8" font-size="7.6" text-anchor="middle">→隨機詞2 → 隨機詞3 → 挑最有潛力的延伸</text>
+        <text x="190" y="1098" fill="#64748b" font-size="7" text-anchor="middle">已有明確方向時優先推薦</text>
+      </g>
+      <g>
+        <rect x="360" y="1010" width="300" height="100" rx="6" fill="rgba(15,23,42,0.5)" stroke="#94a3b8" stroke-width="1.2"/>
+        <text x="510" y="1030" fill="white" font-size="10.5" font-weight="700" text-anchor="middle">Crazy 8s（9 步）</text>
+        <text x="510" y="1044" fill="#94a3b8" font-size="7.6" text-anchor="middle">講清楚問題 → 30秒×8 輪限時解法</text>
+        <text x="510" y="1056" fill="#94a3b8" font-size="7.6" text-anchor="middle">（不准回頭改，不准評論自己）</text>
+        <text x="510" y="1098" fill="#64748b" font-size="7" text-anchor="middle">沒方向時優先推薦；1 解法=1 候選想法</text>
+      </g>
+      <g>
+        <rect x="680" y="1010" width="300" height="100" rx="6" fill="rgba(251,146,60,0.12)" stroke="#fb923c" stroke-width="1.2"/>
+        <text x="830" y="1030" fill="white" font-size="10.5" font-weight="700" text-anchor="middle">多人接龍（relay，2人以上）</text>
+        <text x="830" y="1044" fill="#94a3b8" font-size="7.6" text-anchor="middle">手機掃 QR 加入 → 限時各寫一兩句</text>
+        <text x="830" y="1056" fill="#94a3b8" font-size="7.6" text-anchor="middle">使用者→場景→卡點，往右傳、不改上一層</text>
+        <text x="830" y="1098" fill="#64748b" font-size="7" text-anchor="middle">現場多人、沒方向時；1人會被隱藏</text>
+      </g>
+      <g>
+        <rect x="1000" y="1010" width="300" height="100" rx="6" fill="rgba(15,23,42,0.3)" stroke="#475569" stroke-width="1.2" stroke-dasharray="4,3"/>
+        <text x="1150" y="1045" fill="#94a3b8" font-size="9.5" text-anchor="middle">手動選擇其他方法</text>
+        <text x="1150" y="1062" fill="#64748b" font-size="7.5" text-anchor="middle">不理推薦，11 種方法任選</text>
+      </g>
+
+      <!-- converge arrows -->
+      <line x1="190" y1="1110" x2="700" y2="1180" stroke="#64748b" stroke-width="1"/>
+      <line x1="510" y1="1110" x2="700" y2="1180" stroke="#64748b" stroke-width="1"/>
+      <line x1="830" y1="1110" x2="700" y2="1180" stroke="#64748b" stroke-width="1"/>
+      <line x1="1150" y1="1110" x2="700" y2="1180" stroke="#64748b" stroke-width="1" marker-end="url(#arrow)"/>
+
+      <!-- STEP 4: finalize -->
+      <rect x="490" y="1190" width="420" height="70" rx="8" fill="rgba(76,29,149,0.4)" stroke="#a78bfa" stroke-width="1.5"/>
+      <text x="700" y="1213" fill="white" font-size="12" font-weight="700" text-anchor="middle">彙整步驟 Agent（走完所有步驟後觸發一次）</text>
+      <text x="700" y="1230" fill="#94a3b8" font-size="8" text-anchor="middle">去重、合併歷程中累積的想法片段，產生 2~4 個 Project Concept</text>
+      <text x="700" y="1244" fill="#94a3b8" font-size="7.5" text-anchor="middle">title（直接講功能，不取產品名）＋ description（2~3 句）；只整理不排序</text>
+
+      <line x1="700" y1="1260" x2="700" y2="1300" stroke="#a78bfa" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+      <!-- STEP 5: idea wall -->
+      <rect x="440" y="1310" width="260" height="90" rx="8" fill="rgba(139,92,246,0.18)" stroke="#a78bfa" stroke-width="1.5"/>
+      <text x="570" y="1333" fill="white" font-size="12" font-weight="700" text-anchor="middle">④ 想法牆</text>
+      <text x="570" y="1350" fill="#94a3b8" font-size="8" text-anchor="middle">這一場所有候選想法都在這裡</text>
+      <text x="570" y="1363" fill="#94a3b8" font-size="8" text-anchor="middle">使用者可勾選幾個想要整合的</text>
+      <text x="570" y="1380" fill="#64748b" font-size="7.5" text-anchor="middle">也可以回去選別的方法再跑一輪</text>
+
+      <line x1="700" y1="1355" x2="860" y2="1355" stroke="#a78bfa" stroke-width="1.5" marker-end="url(#arrow)"/>
+
+      <rect x="860" y="1310" width="300" height="90" rx="8" fill="rgba(139,92,246,0.18)" stroke="#a78bfa" stroke-width="1.5"/>
+      <text x="1010" y="1333" fill="white" font-size="12" font-weight="700" text-anchor="middle">Idea Synthesizer Agent</text>
+      <text x="1010" y="1350" fill="#94a3b8" font-size="8" text-anchor="middle">讀使用者勾選的候選想法清單</text>
+      <text x="1010" y="1363" fill="#94a3b8" font-size="8" text-anchor="middle">找出可組合、延伸的地方</text>
+      <text x="1010" y="1380" fill="#64748b" font-size="7.5" text-anchor="middle">產生 1~3 個新的整合版 Project Concept</text>
+
+      <!-- side note: pain point / idea library -->
+      <rect x="40" y="1310" width="340" height="90" rx="8" fill="rgba(30,41,59,0.4)" stroke="#94a3b8" stroke-width="1" stroke-dasharray="4,3"/>
+      <text x="210" y="1332" fill="white" font-size="10.5" font-weight="700" text-anchor="middle">跨場次：痛點庫／想法庫</text>
+      <text x="210" y="1348" fill="#94a3b8" font-size="7.8" text-anchor="middle">關聯圖（依來源結構連線，或切換 AI 語意關聯）</text>
+      <text x="210" y="1361" fill="#94a3b8" font-size="7.8" text-anchor="middle">／表格兩種檢視，隨時可以回來挑一個痛點</text>
+      <text x="210" y="1374" fill="#94a3b8" font-size="7.8" text-anchor="middle">或一個舊想法，重新進入③再跑一輪</text>
+
+      <!-- legend -->
+      <text x="40" y="1430" fill="white" font-size="10" font-weight="600">圖例</text>
+      <rect x="40" y="1440" width="16" height="10" rx="2" fill="rgba(8,51,68,0.4)" stroke="#22d3ee" stroke-width="1"/>
+      <text x="62" y="1448" fill="#94a3b8" font-size="8">設定／輸入</text>
+      <rect x="160" y="1440" width="16" height="10" rx="2" fill="rgba(251,191,36,0.1)" stroke="#fbbf24" stroke-width="1"/>
+      <text x="182" y="1448" fill="#94a3b8" font-size="8">聚焦改造型方法</text>
+      <rect x="320" y="1440" width="16" height="10" rx="2" fill="rgba(6,78,59,0.25)" stroke="#34d399" stroke-width="1"/>
+      <text x="342" y="1448" fill="#94a3b8" font-size="8">發散型方法／Agent</text>
+      <rect x="500" y="1440" width="16" height="10" rx="2" fill="rgba(76,29,149,0.4)" stroke="#a78bfa" stroke-width="1"/>
+      <text x="522" y="1448" fill="#94a3b8" font-size="8">彙整／整合輸出</text>
+      <rect x="660" y="1440" width="16" height="10" rx="2" fill="rgba(251,146,60,0.12)" stroke="#fb923c" stroke-width="1"/>
+      <text x="682" y="1448" fill="#94a3b8" font-size="8">多人即時</text>
+      <rect x="800" y="1440" width="16" height="10" rx="2" fill="rgba(15,23,42,0.5)" stroke="#94a3b8" stroke-width="1"/>
+      <text x="822" y="1448" fill="#94a3b8" font-size="8">其他／手動選擇</text>
+    </svg>
+  </div>
+
+  <!-- DETAIL SECTIONS -->
+  <div class="section-title"><div class="bar"></div>每一步使用者實際會被問的問題（展開查看）</div>
+
+  <details class="m-card" open>
+    <summary><div class="card-dot cyan"></div>① 開始設定（團隊條件）<span class="arrow">▶</span></summary>
+    <div class="desc">一次填完，供 Method Selector 與每一個 Framework Agent 當背景資訊使用。</div>
+    <ol>
+      <li>團隊人數？</li>
+      <li>可用時間？</li>
+      <li>技術背景？（自由文字）</li>
+      <li>領域偏好？（自由文字）</li>
+      <li>限制條件？（例如「希望有實際使用者」「不要太難」）</li>
+      <li>是否已有明確問題？（是／否／不確定）→ 是的話：那個問題是什麼？</li>
+      <li>是否已有既有產品／題目想改造？（是／否／不確定）→ 是的話：想改造的對象是什麼？</li>
+    </ol>
+  </details>
+
+  <details class="m-card">
+    <summary><div class="card-dot amber"></div>② 痛點發想 Pain Discovery（discovery stage，5 題）<span class="arrow">▶</span></summary>
+    <div class="desc">給還沒有痛點的團隊用；每題是不同的回想線索，「想不到」會被 AI 換角度提示而不是退回。</div>
+    <ol>
+      <li>回想最近一個平常的日子，從起床到睡前，哪一刻你嘆了口氣、皺了眉，或心想「怎麼又這樣」？</li>
+      <li>你有沒有在用 Excel、便利貼、LINE 記事本、截圖，或某種土法煉鋼的方式硬撐某件事？那件事是什麼？</li>
+      <li>最近有什麼事，你得等別人回覆、確認、排隊，或等某個東西準備好才能繼續？</li>
+      <li>有什麼事你每週都在重複做，或是一直被別人問同一個問題？</li>
+      <li>想一個你身邊的人（家人、同學、同事、室友），他最近抱怨過什麼？</li>
+    </ol>
+    <div class="meta">彙整產出：1~5 筆痛點，每筆含 statement／who／context／current_workaround，寫入痛點庫</div>
+  </details>
+
+  <details class="m-card">
+    <summary><div class="card-dot emerald"></div>痛點導向 Pain Point（6 題）<span class="arrow">▶</span></summary>
+    <div class="desc">先有痛點、才有解法：從一件具體的麻煩事出發，逐層深挖同一個問題。</div>
+    <ol>
+      <li>最近有什麼事讓你覺得麻煩、卡關，或者一直在用不太好的方式應付？</li>
+      <li>誰會遇到這個問題？是你自己，還是某一群特定的人？</li>
+      <li>現在大家是怎麼解決（或忍受）這個問題的？</li>
+      <li>為什麼現有的解決方式不好？哪裡讓人不滿意？</li>
+      <li>這個問題發生的頻率有多高？是每天都碰到，還是偶爾才遇到？</li>
+      <li>如果這個問題被解決了，對當事人來說，價值或差別會是什麼？</li>
+    </ol>
+    <div class="meta">彙整產出：固定 3 個 Concept，是解決「同一個痛點」的三種不同作法，不是三個不相關題目</div>
+  </details>
+
+  <details class="m-card">
+    <summary><div class="card-dot emerald"></div>使用者旅程 User Journey（8 題）<span class="arrow">▶</span></summary>
+    <div class="desc">把處理這個問題的完整流程攤開，從最麻煩的那一步找切入點。</div>
+    <ol>
+      <li>這個問題通常會在什麼情況下發生？</li>
+      <li>從開始處理到完成，你通常會經歷哪些步驟？</li>
+      <li>在每個步驟中，你會做什麼、使用哪些工具，或與哪些人互動？</li>
+      <li>在整個流程中，哪個步驟最麻煩、最花時間，或最容易出錯？</li>
+      <li>這個困難會對你造成什麼影響？</li>
+      <li>如果可以改善一個步驟，你最希望改變什麼？為什麼？</li>
+      <li>你覺得有哪些地方可以變得更簡單、更有效率或更不容易出錯？</li>
+      <li>如果有一個工具或系統能改善這個流程，你希望它幫你完成什麼事？</li>
+    </ol>
+    <div class="meta">彙整產出：固定 3 個 Concept，每個都對準流程中的某一步（優先是最麻煩、最想改的那一步）</div>
+  </details>
+
+  <details class="m-card">
+    <summary><div class="card-dot amber"></div>SCAMPER（8 題）<span class="arrow">▶</span></summary>
+    <div class="desc">針對一個現有對象，用七個固定角度逐一逼問「還能怎麼改」。</div>
+    <ol>
+      <li>你想要套用 SCAMPER 的對象是什麼？可以是現有的產品、服務、流程，或一個粗略的題目方向。</li>
+      <li>Substitute（替代）：這個對象裡，有哪個元件、角色、材料或做法可以被替代掉？替代成什麼？</li>
+      <li>Combine（結合）：可以把這個對象和什麼其他東西、功能或服務結合在一起？</li>
+      <li>Adapt（調整）：有沒有其他領域的做法，可以拿來調整套用到這個對象上？</li>
+      <li>Modify（修改）：這個對象的某個特性（大小、頻率、強度……）如果放大或縮小，會發生什麼事？</li>
+      <li>Put to another use（其他用途）：這個對象或它的一部分，還可以用在完全不同的用途或使用者身上嗎？</li>
+      <li>Eliminate（消除）：如果拿掉這個對象裡的某個部分，會變得更簡單、更聚焦嗎？拿掉什麼？</li>
+      <li>Reverse（反轉）：如果把這個對象的順序、角色或邏輯反過來，會變成什麼樣子？</li>
+    </ol>
+  </details>
+
+  <details class="m-card">
+    <summary><div class="card-dot amber"></div>逆向思考 Reverse Thinking（4 題）<span class="arrow">▶</span></summary>
+    <div class="desc">故意想最爛的點子，挖出爛在哪裡，再把最有趣的一個調轉成有商機的方向。</div>
+    <ol>
+      <li>這次想圍繞的情境或對象是什麼？可以是一群使用者、一個場景，或一個粗略的題目方向。</li>
+      <li>先反過來想：針對這個情境，故意想 3～5 個「最爛、最沒用、根本沒人想用」的點子。越荒謬越好，不用擔心丟臉。</li>
+      <li>這些爛點子裡，讓你覺得「最讓人討厭」或「最沒用」的地方到底是什麼？具體說說看。</li>
+      <li>挑其中一個你覺得最有趣的爛點子，試著把它「調轉」或「修正」成一個說得通、甚至有商機的方向，會變成什麼樣子？</li>
+    </ol>
+  </details>
+
+  <details class="m-card">
+    <summary><div class="card-dot amber"></div>類比法 Analogy（4 題）<span class="arrow">▶</span></summary>
+    <div class="desc">借用其他領域已經解決類似結構問題的做法，類比套用到自己的情境。</div>
+    <ol>
+      <li>你想解決的問題或情境，用一句話簡單描述一下？</li>
+      <li>有沒有其他完全不同的領域、產業，甚至大自然裡，已經有很成熟的方式在處理「結構類似」的問題？不用跟你的題目像，結構像就好。</li>
+      <li>那個領域具體是怎麼解決的？他們的做法或設計邏輯是什麼？</li>
+      <li>如果把那個做法的邏輯「借」過來，套用在你原本的問題上，會變成什麼樣子？</li>
+    </ol>
+  </details>
+
+  <details class="m-card">
+    <summary><div class="card-dot slate"></div>能力對應問題 Capability Mapping（4 題）<span class="arrow">▶</span></summary>
+    <div class="desc">從已經會的技術出發反推能解決什麼問題，並檢查問題本身是否值得做（避免為技術找題目）。</div>
+    <ol>
+      <li>你們團隊目前比較拿手、或很想拿來練功的技術/工具是什麼？可以列多個，例如電腦視覺、LLM、某個框架。</li>
+      <li>這個技術跟「隨便找個題目套用」比起來，有沒有什麼是它特別擅長、別的做法很難做到的地方？</li>
+      <li>想像一下，誰的生活或工作裡，剛好卡在一個「只有這個技術特性」才能解決的問題上？</li>
+      <li>如果拿掉這個技術限制，單純只看這群人的問題本身，這個問題本身重要嗎？值得做嗎？</li>
+    </ol>
+  </details>
+
+  <details class="m-card">
+    <summary><div class="card-dot emerald"></div>HMW — How Might We（4 題）<span class="arrow">▶</span></summary>
+    <div class="desc">把觀察到的問題改寫成一句「我們可以怎麼做，讓...？」，再針對這句話大量發想解法。</div>
+    <ol>
+      <li>你觀察到的原始問題或困擾是什麼？不用講得很完整，先講你實際觀察到的現象就好。</li>
+      <li>試著把這個問題改寫成一句「How might we ...？」的句子。例如：How might we 幫助學生快速找到空教室？</li>
+      <li>針對你剛剛寫的這句 HMW 問題，盡量列出幾個可能的解法，不用完整、越天馬行空越好。</li>
+      <li>剛剛列的這些解法裡，你自己最想深入研究的是哪一個？為什麼？</li>
+    </ol>
+  </details>
+
+  <details class="m-card">
+    <summary><div class="card-dot emerald"></div>混搭法 Mash-up（4 題）<span class="arrow">▶</span></summary>
+    <div class="desc">分別列出對象、痛點、技術三份清單，各自發散後再隨機強迫組合。</div>
+    <ol>
+      <li>列出 3 個可能的目標族群或使用情境（例如「晚班的護理師」「通勤中的學生」），先不用想他們的問題是什麼。</li>
+      <li>先不管上面列的對象，單獨列出 3 個你們常聽到、常觀察到的痛點或需求。</li>
+      <li>再列出 3 個你們感興趣、或想嘗試套用的技術／媒介／形式（例如 AR、LINE Bot、語音助理、感測器）。</li>
+      <li>從上面三份清單裡，各挑一個「對象 + 痛點 + 技術」硬湊在一起，這個組合可能會變成什麼樣的東西？</li>
+    </ol>
+  </details>
+
+  <details class="m-card">
+    <summary><div class="card-dot slate"></div>隨機刺激 Random Input（5 題）<span class="arrow">▶</span></summary>
+    <div class="desc">抽一個完全無關的隨機詞彙，強迫跟主題湊在一起，逼出意外連結；每次抽詞來自三個互斥詞池。</div>
+    <ol>
+      <li>你們目前的方向或想解決的領域大致是什麼？就算還很模糊也沒關係。</li>
+      <li>（隨機詞 1）想一下這個詞帶給你的感覺、特性或畫面，硬套進你們的主題，逼出一個點子。</li>
+      <li>（隨機詞 2）一樣不用管合不合理，抓住它的感覺或特性，跟主題湊在一起，想出另一個點子。</li>
+      <li>（隨機詞 3）同上，再想出第三個點子。</li>
+      <li>剛剛三次的隨機聯想裡，哪一個組合你覺得比較有潛力？再稍微延伸一下這個方向。</li>
+    </ol>
+  </details>
+
+  <details class="m-card">
+    <summary><div class="card-dot slate"></div>Crazy 8s（9 題，每題限時 30 秒）<span class="arrow">▶</span></summary>
+    <div class="desc">針對同一個具體問題，不准評論、不准刪除，先求數量；越後面擠出來的往往越有突破性。</div>
+    <ol>
+      <li>你們想解決的具體問題或挑戰是什麼？盡量講清楚，這一步不用想解法。</li>
+      <li>解法 1/8：30 秒內寫下第一個解決辦法。不管好不好、可不可行。</li>
+      <li>解法 2/8：不要回頭看剛剛寫的，再寫一個解法，這次刻意換一個完全不同的切入角度。</li>
+      <li>解法 3/8：繼續，30 秒內寫下第 3 個解法。</li>
+      <li>解法 4/8：過半了，第 4 個解法，越怪越好，先不要評論自己。</li>
+      <li>解法 5/8：如果卡住，故意想一個誇張、不可行的版本也可以。</li>
+      <li>解法 6/8。</li>
+      <li>解法 7/8：只剩最後兩個。</li>
+      <li>解法 8/8：最後衝刺！通常最後擠出來的最有突破性。</li>
+    </ol>
+    <div class="meta">彙整產出：1 個解法 = 1 個 Concept（不合併、不淘汰），數量依實際寫出的解法數而定</div>
+  </details>
+
+  <details class="m-card">
+    <summary><div class="card-dot orange"></div>多人接龍 Relay（2 人以上，手機同時作答）<span class="arrow">▶</span></summary>
+    <div class="desc">紙本 Brainwriting 線上版：每人手上一條鏈同時往右傳，看不到別人手上的紙，最後公布牆一次揭曉所有鏈。目前第 1 階段固定三段題目、不呼叫模型。</div>
+    <ol>
+      <li>主持人按「開始發想」開場，畫面顯示 QR code（自動帶入區網 IP，或 ngrok 網址）</li>
+      <li>參與者用手機掃碼加入 lobby</li>
+      <li>第 1 層（使用者）：限時寫一兩句，描述一種使用者</li>
+      <li>紙往右傳一位 → 第 2 層（場景）：接著剛剛那位寫的使用者，限時寫他會遇到的場景（只往下接、不能改上一層；看不懂也要照樣接）</li>
+      <li>3 人以上才有第 3 層（卡點）：接著場景，限時寫他卡在哪裡；2 人時流程縮成「使用者→卡點」兩層</li>
+      <li>全部寫完後，主持人畫面一次公布所有完整的鏈</li>
+    </ol>
+    <div class="meta">1 人團隊時這個方法完全不會出現在推薦或選項裡（min_team_size）</div>
+  </details>
+
+  <details class="m-card">
+    <summary><div class="card-dot violet"></div>彙整 → ④ 想法牆 → Idea Synthesizer<span class="arrow">▶</span></summary>
+    <div class="desc">走完任一方法的全部步驟後固定觸發一次彙整，產出的候選想法進入想法牆；使用者可挑幾個交給 Synthesizer 整合。</div>
+    <ol>
+      <li>彙整 Agent 讀完整問答歷程＋每一步的想法片段，去重合併成 2~4 個 Project Concept（痛點導向固定 3 個、Crazy 8s 等於解法數），只整理不排序、不淘汰</li>
+      <li>候選想法進入想法牆，使用者可以勾選想要的幾個，也可以直接回到 Method Selector 換一種方法再跑一輪（同一輪或新的一輪）</li>
+      <li>勾選後交給 Idea Synthesizer Agent：讀所有選中的候選想法（含各自來源方法），找出可組合延伸的地方</li>
+      <li>輸出 1~3 個新的整合版 Project Concept，標註 title（直接講功能）＋ description（參考了哪些原始想法元素、為何這樣組合有價值）</li>
+    </ol>
+  </details>
+
+  <footer class="footer">IdeaTrail workflow • 根據 backend/app/agents 原始碼逐一比對生成 • 11 種發想方法 + 1 個痛點發想 discovery stage</footer>
+</div>
+</body>
+</html>

@@ -7,13 +7,13 @@
     <title>IdeaTrail · 專案發想引導</title>
     <script>
       // Runs before first paint, so the page never flashes the wrong theme.
-      // Key and logic mirror src/components/design/theme-provider.tsx.
+      // Key and logic mirror initialTheme() in
+      // src/components/design/theme-provider.tsx — change both together.
       try {
         var stored = localStorage.getItem('ideation-theme')
         var dark =
           stored === 'dark' ||
-          ((!stored || stored === 'system') &&
-            window.matchMedia('(prefers-color-scheme: dark)').matches)
+          (stored !== 'light' && window.matchMedia('(prefers-color-scheme: dark)').matches)
         document.documentElement.classList.toggle('dark', dark)
         document.documentElement.style.colorScheme = dark ? 'dark' : 'light'
       } catch (e) {}

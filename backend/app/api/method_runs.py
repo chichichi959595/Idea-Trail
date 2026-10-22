@@ -9,10 +9,11 @@ from sqlalchemy.orm import Session as DbSession
 from app.agents.framework import get_framework_agent
 from app.agents.framework.base import FORCE_ACCEPT_INSTRUCTION
 from app.api.cancel import request_cancel
-from app.api.serializers import idea_to_dict, method_run_to_dict
+from app.api.relay import open_relay_run
+from app.api.serializers import idea_to_dict, method_run_to_dict, pain_point_to_dict
 from app.api.sse import EventStream, drain, event, sse_response
 from app.db.llm_log import log_llm_call
-from app.db.models import Idea, IdeationSession, MethodRun, MethodStep
+from app.db.models import Idea, IdeationSession, MethodRun, MethodStep, PainPoint
 from app.db.session import get_db
 from app.providers.base import LLMResult, ProviderError
 from app.providers.quality import stream_with_quality_guard
@@ -44,6 +45,13 @@ def create_method_run(
     except ValueError as exc:
         raise HTTPException(400, str(exc)) from exc
 
+    pain_point_id = payload.pain_point_id
+    if agent.stage == "discovery":
+        # A discovery run is how pain points get found, so it can't start from one.
+        pain_point_id = None
+    elif pain_point_id is not None and db.get(PainPoint, pain_point_id) is None:
+        raise HTTPException(404, "pain point not found")
+
     run = MethodRun(
         session_id=session_id,
         method_name=payload.method_name,
@@ -52,7 +60,16 @@ def create_method_run(
         step_model=step_model,
         status="running",
         current_step_index=0,
+        pain_point_id=pain_point_id,
     )
+    if agent.mode == "relay":
+        # 多人接龍 opens a lobby for phones to join rather than a first step.
+        # The provider and models are still pinned: the relay doesn't call a
+        # model yet, but the analysis after the reveal will, on this run's pick.
+        open_relay_run(db, run)
+        db.add(run)
+        db.commit()
+        return method_run_to_dict(run)
     db.add(run)
     db.flush()
 
@@ -139,6 +156,27 @@ async def _call(
     yield result
 
 
+def _pain_point_of(db: DbSession, run: MethodRun) -> PainPoint | None:
+    """The pain point this run is working on. A deleted one just drops out of
+    the prompt — the run can carry on without it."""
+    return db.get(PainPoint, run.pain_point_id) if run.pain_point_id else None
+
+
+def _result_payload(run: MethodRun, new_ideas=None, new_pain_points=None) -> dict:
+    """The body every answer/finalize call ends with. `ideas` and `pain_points`
+    stay None until the run actually converges, so the client can tell "this
+    step moved on" from "this run just produced something"."""
+    return {
+        "accepted": True,
+        "feedback": None,
+        "method_run": method_run_to_dict(run),
+        "ideas": None if new_ideas is None else [idea_to_dict(i) for i in new_ideas],
+        "pain_points": None
+        if new_pain_points is None
+        else [pain_point_to_dict(p) for p in new_pain_points],
+    }
+
+
 def _load_run_for_answer(db: DbSession, run_id: int, payload: AnswerStepRequest) -> MethodRun:
     run = db.get(MethodRun, run_id)
     if run is None:
@@ -191,10 +229,15 @@ async def _answer_step_events(
         raise HTTPException(500, "current step record is missing")
 
     answer_text = payload.answer.strip()
-    if answer_text:
+    if answer_text and not agent.steps[run.current_step_index].analyze:
+        # A pace-only step: record it and move on. Its answer is judged at
+        # finalize instead, so no blocking call sits between timed rounds.
+        current_step.user_answer = payload.answer
+        current_step.agent_output_json = None
+    elif answer_text:
         prior_steps = [s for s in run.steps if s.step_index < run.current_step_index]
         system_prompt, user_prompt, schema = agent.build_step_prompt(
-            run.current_step_index, session, prior_steps, payload.answer
+            run.current_step_index, session, prior_steps, payload.answer, _pain_point_of(db, run)
         )
         if payload.force:
             # 強制送出: the user saw the AI's complaint and chose to keep this
@@ -231,6 +274,7 @@ async def _answer_step_events(
                     or "這個回答看起來文不對題，可以再具體說明一下嗎？",
                     "method_run": method_run_to_dict(run),
                     "ideas": None,
+                    "pain_points": None,
                 },
             )
             return
@@ -257,34 +301,16 @@ async def _answer_step_events(
             )
         )
         db.commit()
-        yield event(
-            "result",
-            payload={
-                "accepted": True,
-                "feedback": None,
-                "method_run": method_run_to_dict(run),
-                "ideas": None,
-            },
-        )
+        yield event("result", payload=_result_payload(run))
         return
 
     # last step answered — run the finalize/convergence call
     db.flush()
-    new_ideas = []
     async for item in _finalize_events(db, run, session):
-        if item["kind"] == "ideas":
-            new_ideas = item["ideas"]
+        if item["kind"] == "converged":
+            yield event("result", payload=_result_payload(run, *item["produced"]))
         else:
             yield item
-    yield event(
-        "result",
-        payload={
-            "accepted": True,
-            "feedback": None,
-            "method_run": method_run_to_dict(run),
-            "ideas": [idea_to_dict(i) for i in new_ideas],
-        },
-    )
 
 
 def _load_run_for_finalize(db: DbSession, run_id: int) -> tuple[MethodRun, IdeationSession]:
@@ -321,21 +347,11 @@ async def retry_finalize_stream(run_id: int, db: DbSession = Depends(get_db)):
 async def _retry_finalize_events(db: DbSession, run_id: int) -> EventStream:
     run, session = _load_run_for_finalize(db, run_id)
     run.status = "running"  # _finalize_events decides the outcome from here
-    new_ideas = []
     async for item in _finalize_events(db, run, session):
-        if item["kind"] == "ideas":
-            new_ideas = item["ideas"]
+        if item["kind"] == "converged":
+            yield event("result", payload=_result_payload(run, *item["produced"]))
         else:
             yield item
-    yield event(
-        "result",
-        payload={
-            "accepted": True,
-            "feedback": None,
-            "method_run": method_run_to_dict(run),
-            "ideas": [idea_to_dict(i) for i in new_ideas],
-        },
-    )
 
 
 async def _finalize_events(
@@ -355,7 +371,9 @@ async def _finalize_events(
     """
     agent = get_framework_agent(run.method_name)
     all_steps = sorted(run.steps, key=lambda s: s.step_index)
-    system_prompt, user_prompt, schema = agent.build_finalize_prompt(session, all_steps)
+    system_prompt, user_prompt, schema = agent.build_finalize_prompt(
+        session, all_steps, _pain_point_of(db, run)
+    )
 
     result = None
     async for item in _call(
@@ -371,22 +389,48 @@ async def _finalize_events(
         else:
             yield item
 
-    new_ideas = []
-    for item in (result.structured or {}).get("ideas", []):
-        if not item.get("title") or not item.get("description"):
-            continue
-        idea = Idea(
-            session_id=run.session_id,
-            method_run_id=run.id,
-            title=item["title"],
-            description=item["description"],
-            source_method=run.method_name,
-            is_synthesized=False,
-        )
-        db.add(idea)
-        new_ideas.append(idea)
+    structured = result.structured or {}
+    new_ideas: list[Idea] | None = None
+    new_pain_points: list[PainPoint] | None = None
+    if agent.stage == "discovery":
+        new_pain_points = []
+        for item in structured.get("pain_points", []):
+            statement = (item.get("statement") or "").strip()
+            if not statement:
+                continue
+            pain_point = PainPoint(
+                session_id=run.session_id,
+                statement=statement,
+                # The schema asks for "" when a field can't be read off the
+                # answers; the library stores that as "not known".
+                who=(item.get("who") or "").strip() or None,
+                context=(item.get("context") or "").strip() or None,
+                current_workaround=(item.get("current_workaround") or "").strip() or None,
+                source="discovery",
+                method_run_id=run.id,
+            )
+            db.add(pain_point)
+            new_pain_points.append(pain_point)
+        produced_anything = bool(new_pain_points)
+    else:
+        new_ideas = []
+        for item in structured.get("ideas", []):
+            if not item.get("title") or not item.get("description"):
+                continue
+            idea = Idea(
+                session_id=run.session_id,
+                method_run_id=run.id,
+                title=item["title"],
+                description=item["description"],
+                source_method=run.method_name,
+                is_synthesized=False,
+                pain_point_id=run.pain_point_id,
+            )
+            db.add(idea)
+            new_ideas.append(idea)
+        produced_anything = bool(new_ideas)
 
-    if new_ideas:
+    if produced_anything:
         run.status = "done"
         run.finished_at = dt.datetime.now(dt.timezone.utc)
     else:
@@ -394,5 +438,5 @@ async def _finalize_events(
         run.status = "failed"
         run.finished_at = None
     db.commit()
-    # Not a "result": the caller wraps these ideas in its own response body.
-    yield event("ideas", ideas=new_ideas)
+    # Not a "result": the caller wraps what was produced in its own response body.
+    yield event("converged", produced=(new_ideas, new_pain_points))

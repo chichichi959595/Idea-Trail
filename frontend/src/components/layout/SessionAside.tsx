@@ -1,4 +1,4 @@
-import { PROVIDER_LABELS, type ProviderId, type ProvidersHealth } from '@/types'
+import { PROVIDER_LABELS, type PainPoint, type ProviderId, type ProvidersHealth } from '@/types'
 import { toSessionPayload, type Intake } from '@/intake'
 import { Eyebrow, Mono } from '@/components/design/typography'
 
@@ -22,6 +22,7 @@ export function SessionAside({
   stepModel,
   providersHealth,
   ideaCount,
+  painPoint,
 }: {
   intake: Intake
   provider: string
@@ -29,6 +30,8 @@ export function SessionAside({
   stepModel: string
   providersHealth: ProvidersHealth | undefined
   ideaCount: number
+  /** The pain point 專案發想 is working on, if one is picked. */
+  painPoint: PainPoint | null
 }) {
   const health = providersHealth?.[provider as ProviderId]
   const labelForModel = (id: string) =>
@@ -40,6 +43,7 @@ export function SessionAside({
     answers.time_budget && { label: '時間', value: answers.time_budget },
     answers.tech_background && { label: '技術', value: answers.tech_background },
     answers.domain_pref && { label: '領域', value: answers.domain_pref },
+    painPoint && { label: '痛點', value: painPoint.statement },
     ideaCount > 0 && { label: '候選', value: `${ideaCount} 個想法` },
   ].filter((f): f is { label: string; value: string } => Boolean(f))
 
@@ -53,7 +57,7 @@ export function SessionAside({
               {PROVIDER_LABELS[provider as ProviderId] ?? provider}
             </span>
             <div className="flex flex-col gap-0.5">
-              <ModelLine role="收斂" value={model ? labelForModel(model) : '預設'} />
+              <ModelLine role="推理" value={model ? labelForModel(model) : '預設'} />
               {/* Only shown when the two roles actually differ — repeating the
                   same model name twice reads like a bug. */}
               {stepModel && stepModel !== model && (
