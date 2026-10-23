@@ -151,7 +151,11 @@ export function StepPanel({
           >
             {(step.description || step.actions) && (
               <div className="flex flex-wrap items-center justify-between gap-x-6 gap-y-3">
-                {step.description && <Small className="min-w-0 flex-1">{step.description}</Small>}
+                {/* The basis is what lets the action drop under the line on a
+                    phone, instead of squeezing the sentence into a narrow column. */}
+                {step.description && (
+                  <Small className="min-w-0 flex-1 basis-72">{step.description}</Small>
+                )}
                 {step.actions && (
                   <div className="flex shrink-0 items-center gap-2">{step.actions}</div>
                 )}

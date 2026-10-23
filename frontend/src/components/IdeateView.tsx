@@ -1,22 +1,16 @@
-import { useState } from 'react'
+import { useState, type ReactNode } from 'react'
 import { ArrowRightIcon, SearchIcon } from 'lucide-react'
-import type { MethodRecommendation, PainPoint } from '../types'
+import { PAIN_POINT_SOURCE_LABELS, type MethodRecommendation, type PainPoint } from '../types'
 import { useMethodCatalog } from '../useMethodCatalog'
+import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
 import { Selectable } from '@/components/design/selectable'
 import { Screen, ScreenBody, ScreenHeader } from '@/components/design/section'
 import { StepPanel } from '@/components/design/step-panel'
-import { Eyebrow, Small, Subhead } from '@/components/design/typography'
+import { Subhead } from '@/components/design/typography'
 import { Notice } from '@/components/design/states'
 import { AiWorking } from '@/components/design/ai'
-import { PainPointCard, PainPointFacts } from './painpoints'
+import { PainPointFacts } from './painpoints'
 import { MethodBrief, MethodPicker, PickerDescription, RecommendButton } from './MethodPicker'
 
 interface Props {
@@ -68,60 +62,72 @@ export function IdeateView({
   const { methods: catalog, get } = useMethodCatalog()
   const allMethods = catalog.filter((m) => m.stage === 'ideation')
   const [selectedMethod, setSelectedMethod] = useState<string | null>(null)
-  const [picking, setPicking] = useState(false)
   // Arriving with a pain point already chosen — from 痛點發想, the library,
   // or the setup screen — means the first page is done; open on the second.
   const [tab, setTab] = useState(painPoint ? 'method' : 'pain')
 
-  const painPage = painPoint ? (
-    <div className="flex flex-col gap-3">
-      <PainPointCard painPoint={painPoint} selected />
-    </div>
-  ) : painPoints.length > 0 ? (
-    <Notice
-      tone="brand"
-      icon={SearchIcon}
-      title="還沒選痛點"
-      actions={
-        <>
-          <Button size="sm" onClick={() => setPicking(true)}>
-            從痛點庫挑
-          </Button>
-          <Button size="sm" variant="outline" onClick={onGoToDiscover}>
-            再去找痛點
-          </Button>
-        </>
-      }
-    >
-      也可以不選直接發想，想法就只會依團隊條件發散，比較難收斂到一個真實的問題上。
-    </Notice>
-  ) : (
-    <Notice
-      tone="brand"
-      icon={SearchIcon}
-      title="痛點庫還是空的"
-      actions={
-        <Button size="sm" onClick={onGoToDiscover}>
-          前往痛點發想
-        </Button>
-      }
-    >
-      先去痛點發想找出幾個痛點，或在開始設定寫下你們已經有的那一個。
-    </Notice>
-  )
-
-  const readyPage = (
-    <div className="flex flex-col gap-5">
-      <div className="flex flex-col gap-2">
-        <Eyebrow>要解決的痛點</Eyebrow>
-        {painPoint ? (
-          <Subhead className="text-pretty">{painPoint.statement}</Subhead>
-        ) : (
-          <Small>不指定痛點，想法會只依團隊條件發散。</Small>
-        )}
+  // The whole library sits on the page rather than behind a dialog: picking
+  // the problem is this page's one job, and the list is short enough to scan.
+  const painPage =
+    painPoints.length > 0 ? (
+      <div className="flex flex-col gap-2.5">
+        {painPoints.map((p) => (
+          <Selectable
+            key={p.id}
+            selected={p.id === painPoint?.id}
+            onSelect={() => p.id !== painPoint?.id && onPickPainPoint(p.id)}
+            className="gap-2 pr-12"
+          >
+            <span className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
+              <Subhead className="text-pretty">{p.statement}</Subhead>
+              <Badge variant="soft" className="translate-y-[-1px]">
+                {PAIN_POINT_SOURCE_LABELS[p.source]}
+              </Badge>
+            </span>
+            <PainPointFacts painPoint={p} />
+          </Selectable>
+        ))}
       </div>
-      <div className="flex flex-col gap-2">
-        <Eyebrow>發想方法</Eyebrow>
+    ) : (
+      <Notice
+        tone="brand"
+        icon={SearchIcon}
+        title="痛點庫還是空的"
+        actions={
+          <Button size="sm" onClick={onGoToDiscover}>
+            前往痛點發想
+          </Button>
+        }
+      >
+        先去痛點發想找出幾個痛點，或在開始設定寫下你們已經有的那一個。
+      </Notice>
+    )
+
+  // Two answers read side by side as one summary — the same label column and
+  // the same weight for both, rather than one bare line and one boxed card.
+  const readyPage = (
+    <dl className="flex flex-col divide-y divide-border border-y border-border">
+      <SummaryRow label="要解決的痛點">
+        {painPoint ? (
+          <div className="flex flex-col gap-2">
+            <Subhead className="text-pretty">{painPoint.statement}</Subhead>
+            <PainPointFacts painPoint={painPoint} />
+          </div>
+        ) : (
+          <Notice
+            tone="warning"
+            title="還沒選痛點"
+            actions={
+              <Button size="sm" variant="outline" onClick={() => setTab('pain')}>
+                回去選痛點
+              </Button>
+            }
+          >
+            先在第 1 頁挑一個要解決的痛點，才能開始。
+          </Notice>
+        )}
+      </SummaryRow>
+      <SummaryRow label="發想方法">
         {selectedMethod ? (
           <MethodBrief method={selectedMethod} />
         ) : (
@@ -137,8 +143,8 @@ export function IdeateView({
             先在第 2 頁挑一個發想方法，才能開始。
           </Notice>
         )}
-      </div>
-    </div>
+      </SummaryRow>
+    </dl>
   )
 
   return (
@@ -162,8 +168,8 @@ export function IdeateView({
             ) : (
               <Button
                 size="sm"
-                disabled={!selectedMethod || !hasProvider}
-                onClick={() => selectedMethod && onStart(selectedMethod)}
+                disabled={!painPoint || !selectedMethod || !hasProvider}
+                onClick={() => painPoint && selectedMethod && onStart(selectedMethod)}
               >
                 開始發想
                 <ArrowRightIcon />
@@ -175,9 +181,10 @@ export function IdeateView({
               id: 'pain',
               label: '要解決的痛點',
               description: '從痛點庫挑一個。所有方法的每一步，AI 都會扣回這個痛點。',
-              actions: painPoint && painPoints.length > 0 && (
-                <Button variant="outline" size="sm" onClick={() => setPicking(true)}>
-                  換一個
+              actions: painPoints.length > 0 && (
+                <Button variant="outline" size="sm" onClick={onGoToDiscover}>
+                  <SearchIcon />
+                  再去找痛點
                 </Button>
               ),
               done: painPoint !== null,
@@ -227,59 +234,15 @@ export function IdeateView({
         />
       </ScreenBody>
 
-      <PainPointPicker
-        open={picking}
-        painPoints={painPoints}
-        currentId={painPoint?.id ?? null}
-        onPick={(id) => {
-          onPickPainPoint(id)
-          setPicking(false)
-        }}
-        onClose={() => setPicking(false)}
-      />
     </Screen>
   )
 }
 
-function PainPointPicker({
-  open,
-  painPoints,
-  currentId,
-  onPick,
-  onClose,
-}: {
-  open: boolean
-  painPoints: PainPoint[]
-  currentId: number | null
-  onPick: (id: number | null) => void
-  onClose: () => void
-}) {
+function SummaryRow({ label, children }: { label: string; children: ReactNode }) {
   return (
-    <Dialog open={open} onOpenChange={(next) => !next && onClose()}>
-      <DialogContent className="max-h-[85svh] gap-4 overflow-y-auto sm:max-w-xl">
-        <DialogHeader className="text-left">
-          <DialogTitle>從痛點庫挑一個</DialogTitle>
-          <DialogDescription>包含其他場次找到的痛點。</DialogDescription>
-        </DialogHeader>
-        <div className="flex flex-col gap-2">
-          {painPoints.map((p) => (
-            <Selectable
-              key={p.id}
-              selected={p.id === currentId}
-              onSelect={() => onPick(p.id)}
-              className="gap-1.5 pr-11"
-            >
-              <Subhead className="text-pretty">{p.statement}</Subhead>
-              <PainPointFacts painPoint={p} />
-            </Selectable>
-          ))}
-          {currentId !== null && (
-            <Button variant="ghost" size="sm" className="self-start" onClick={() => onPick(null)}>
-              不指定痛點
-            </Button>
-          )}
-        </div>
-      </DialogContent>
-    </Dialog>
+    <div className="grid grid-cols-1 gap-x-8 gap-y-2 py-5 sm:grid-cols-[7.5rem_minmax(0,1fr)]">
+      <dt className="text-sm text-muted-foreground sm:pt-px">{label}</dt>
+      <dd className="min-w-0">{children}</dd>
+    </div>
   )
 }

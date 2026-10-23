@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { ChevronDownIcon, WandSparklesIcon } from 'lucide-react'
 import type { MethodCatalogEntry, MethodRecommendation } from '../types'
 import { useMethodCatalog } from '../useMethodCatalog'
@@ -7,7 +8,7 @@ import { Button } from '@/components/ui/button'
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from '@/components/ui/collapsible'
 import { Selectable } from '@/components/design/selectable'
 import { Small, Subhead } from '@/components/design/typography'
-import { EmptyState, ErrorState, Notice, RowSkeleton } from '@/components/design/states'
+import { ErrorState, Notice, RowSkeleton } from '@/components/design/states'
 import { AiMarkdown, AiReasoning, AiWorking } from '@/components/design/ai'
 
 /** How many methods a recommendation names, at most. Mirrors the backend's
@@ -55,7 +56,7 @@ export function RecommendButton({
 
 /**
  * Choosing a method for a stage: an AI recommendation on top, the stage's full
- * catalog folded underneath. 專案發想 and 痛點發想 both pick their method this
+ * catalog underneath — open until a recommendation arrives, folded after. 專案發想 and 痛點發想 both pick their method this
  * way — only the catalog, and what the recommendation reads, differ. Rendered
  * as a page of the screen's step panel; the heading and the recommend button
  * are the page's.
@@ -94,6 +95,11 @@ export function MethodPicker({
 }) {
   const { get, labelOf } = useMethodCatalog()
   const count = Math.min(RECOMMENDATION_COUNT, methods.length)
+  const hasRecommendations = recommendations.length > 0
+  // null until the user folds or unfolds the list themselves; until then it
+  // follows whether there is a recommendation to look at first.
+  const [showCatalog, setShowCatalog] = useState<boolean | null>(null)
+  const catalogOpen = showCatalog ?? !hasRecommendations
 
   return (
     <div className="flex flex-col gap-5">
@@ -110,17 +116,6 @@ export function MethodPicker({
         >
           推薦方法跟之後的每一步都要用到 AI，先回開始設定選一個額度來源。
         </Notice>
-      )}
-
-      {hasProvider && !recommending && recommendations.length === 0 && !recommendError && (
-        <EmptyState
-          description={
-            <>
-              按「讓 AI 推薦方法」，AI 會讀{readsFrom}，從 {methods.length} 種方法裡排出最適合的{' '}
-              {count} 個並說明理由。也可以直接展開下面的完整清單自己挑。
-            </>
-          }
-        />
       )}
 
       {recommending && (
@@ -153,8 +148,8 @@ export function MethodPicker({
         />
       )}
 
-      {!recommending && recommendations.length > 0 && (
-        <ol className="flex flex-col gap-2.5">
+      {!recommending && hasRecommendations && (
+        <ol aria-label="AI 推薦的方法" className="flex flex-col gap-2.5">
           {recommendations.map((r) => (
             <li key={r.id}>
               <RecommendationRow
@@ -173,13 +168,29 @@ export function MethodPicker({
       )}
 
       {!recommending && (
-        <Collapsible className="rounded-xl border border-border bg-surface">
-          <CollapsibleTrigger className="group flex w-full items-center justify-between gap-2 px-4 py-3 text-left text-sm font-medium transition-colors hover:bg-accent focus-visible:ring-[3px] focus-visible:ring-ring focus-visible:outline-none">
-            完整方法清單
-            <ChevronDownIcon className="size-4 text-muted-foreground transition-transform duration-200 group-data-[state=open]:rotate-180" />
-          </CollapsibleTrigger>
+        <Collapsible
+          open={catalogOpen}
+          onOpenChange={setShowCatalog}
+          className={cn('flex flex-col', hasRecommendations && 'border-t border-border pt-4')}
+        >
+          {/* With a recommendation up, the full list is the fallback and folds
+              away; without one, it is the page, so it is simply open. */}
+          <div className="flex min-h-8 items-center justify-between gap-3">
+            <h3 className="text-sm font-medium">
+              全部方法
+              <span className="ml-1.5 text-muted-foreground tabular-nums">{methods.length}</span>
+            </h3>
+            {hasRecommendations && (
+              <CollapsibleTrigger asChild>
+                <Button variant="ghost" size="sm" className="group text-muted-foreground">
+                  {catalogOpen ? '收起' : '自己挑'}
+                  <ChevronDownIcon className="transition-transform duration-200 group-data-[state=open]:rotate-180" />
+                </Button>
+              </CollapsibleTrigger>
+            )}
+          </div>
           <CollapsibleContent className="data-[state=closed]:animate-collapsible-up data-[state=open]:animate-collapsible-down overflow-hidden">
-            <div className="grid grid-cols-1 gap-2.5 px-4 pt-1 pb-4 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-2.5 pt-3 sm:grid-cols-2">
               {methods.map((m) => (
                 <Selectable
                   key={m.name}
@@ -294,7 +305,7 @@ export function MethodBrief({ method }: { method: string }) {
   const { get, labelOf } = useMethodCatalog()
   const entry = get(method)
   return (
-    <div className="flex flex-col gap-3 rounded-xl border border-border bg-subtle p-4">
+    <div className="flex flex-col gap-2.5">
       <div className="flex flex-wrap items-center gap-2">
         <Subhead>{labelOf(method)}</Subhead>
         {entry && (
@@ -306,8 +317,8 @@ export function MethodBrief({ method }: { method: string }) {
       </div>
       {entry && (
         <>
-          <Small className="text-pretty text-foreground/80">{entry.tutorial.intro}</Small>
-          <Small className="text-pretty">
+          <Small className="max-w-[65ch] text-pretty text-foreground/80">{entry.tutorial.intro}</Small>
+          <Small className="max-w-[65ch] text-pretty">
             <span className="font-medium text-foreground">怎麼玩：</span>
             {entry.tutorial.how_to}
           </Small>
