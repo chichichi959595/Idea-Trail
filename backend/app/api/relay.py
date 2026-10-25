@@ -27,7 +27,8 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session as DbSession
 
 from app import relay
-from app.db.models import MethodRun, Participant, RelayCell
+from app.api.serializers import pain_point_to_dict
+from app.db.models import MethodRun, PainPoint, Participant, RelayCell
 from app.db.session import get_db
 
 router = APIRouter(tags=["relay"])
@@ -168,7 +169,9 @@ def _maybe_advance(db: DbSession, run: MethodRun, *, force: bool = False) -> Non
 # --------------------------------------------------------------------------
 
 
-def _chains(run: MethodRun, *, with_authors: bool) -> list[dict]:
+def _chains(
+    run: MethodRun, *, with_authors: bool, saved: dict[int, int] | None = None
+) -> list[dict]:
     n = len(run.participants)
     by_pos = _cells_by_position(run)
     by_id = {p.id: p for p in run.participants}
@@ -191,8 +194,21 @@ def _chains(run: MethodRun, *, with_authors: bool) -> list[dict]:
                 entry["author"] = author.display_name if author else None
                 entry["latency_ms"] = cell.latency_ms
             cells.append(entry)
-        chains.append({"chain_index": chain_index, "cells": cells})
+        chain = {"chain_index": chain_index, "cells": cells}
+        if saved is not None:
+            chain["pain_point_id"] = saved.get(chain_index)
+        chains.append(chain)
     return chains
+
+
+def _saved_chains(db: DbSession, run: MethodRun) -> dict[int, int]:
+    """chain index -> the pain point saved off it."""
+    rows = db.execute(
+        select(PainPoint.relay_chain_index, PainPoint.id).where(
+            PainPoint.method_run_id == run.id, PainPoint.relay_chain_index.is_not(None)
+        )
+    )
+    return {chain_index: pain_point_id for chain_index, pain_point_id in rows}
 
 
 def _round_progress(run: MethodRun) -> dict:
@@ -214,12 +230,9 @@ def _clock(run: MethodRun) -> dict:
     }
 
 
-def _host_state(run: MethodRun) -> dict:
-    # Before the start, the ladder the room *would* get at its current size —
-    # it changes as people join, and the host should see that happen.
-    rungs = run.relay_rungs or relay.ladder_for(
-        max(len(run.participants), relay.MIN_PARTICIPANTS)
-    )
+def _host_state(run: MethodRun, db: DbSession) -> dict:
+    # Before the start, the ladder the room will get.
+    rungs = run.relay_rungs or relay.ladder_for(len(run.participants))
     data = {
         "id": run.id,
         "session_id": run.session_id,
@@ -240,7 +253,7 @@ def _host_state(run: MethodRun) -> dict:
         data["progress"] = _round_progress(run)
         data.update(_clock(run))
     if run.status == "revealed":
-        data["chains"] = _chains(run, with_authors=True)
+        data["chains"] = _chains(run, with_authors=True, saved=_saved_chains(db, run))
     return data
 
 
@@ -288,6 +301,33 @@ def _participant_state(run: MethodRun, me: Participant) -> dict:
     return data
 
 
+def _chain_to_pain_point(run: MethodRun, chain_index: int) -> PainPoint | None:
+    """A chain read as a pain point, layer by layer through the rungs' roles —
+    nothing rewritten: it's the room's own words that go into the library.
+    None when the pain layer itself was left blank."""
+    by_role: dict[str, str] = {}
+    by_pos = _cells_by_position(run)
+    for round_index, rung in enumerate(run.relay_rungs or []):
+        cell = by_pos.get((chain_index, round_index))
+        if cell is not None and cell.answer_text:
+            # A later layer of the same role (papers come back round in a
+            # small room) adds to the earlier one rather than replacing it.
+            prior = by_role.get(rung["role"])
+            by_role[rung["role"]] = f"{prior}；{cell.answer_text}" if prior else cell.answer_text
+    if not by_role.get("pain"):
+        return None
+    return PainPoint(
+        session_id=run.session_id,
+        statement=by_role["pain"],
+        who=by_role.get("who"),
+        context=by_role.get("context"),
+        current_workaround=by_role.get("current_fix"),
+        source="discovery",
+        method_run_id=run.id,
+        relay_chain_index=chain_index,
+    )
+
+
 # --------------------------------------------------------------------------
 # host
 # --------------------------------------------------------------------------
@@ -319,7 +359,7 @@ def open_relay_run(db: DbSession, run: MethodRun) -> None:
 def get_relay_run(run_id: int, db: DbSession = Depends(get_db)):
     run = _load_host_run(db, run_id)
     _maybe_advance(db, run)
-    return _host_state(run)
+    return _host_state(run, db)
 
 
 @router.post("/relay-runs/{run_id}/start")
@@ -358,7 +398,36 @@ def start_relay_run(run_id: int, db: DbSession = Depends(get_db)):
     run.relay_round_started_at = _now()
     db.commit()
     db.refresh(run)
-    return _host_state(run)
+    return _host_state(run, db)
+
+
+@router.post("/relay-runs/{run_id}/chains/{chain_index}/pain-point")
+def save_chain_as_pain_point(run_id: int, chain_index: int, db: DbSession = Depends(get_db)):
+    """Put one chain off the wall into the pain point library.
+
+    The host picks which, after the room has talked them over: some chains
+    end on a real snag and some trail off, and only the room can tell. Saving
+    the same chain twice hands back the one already saved.
+    """
+    run = _load_host_run(db, run_id)
+    if run.status != "revealed":
+        raise HTTPException(409, "公布之後才能存進痛點庫")
+    if not 0 <= chain_index < len(run.participants):
+        raise HTTPException(404, "chain not found")
+    existing = db.scalars(
+        select(PainPoint).where(
+            PainPoint.method_run_id == run.id, PainPoint.relay_chain_index == chain_index
+        )
+    ).first()
+    if existing is not None:
+        return pain_point_to_dict(existing)
+    pain_point = _chain_to_pain_point(run, chain_index)
+    if pain_point is None:
+        raise HTTPException(400, "這一條的卡點沒有人寫，存不了")
+    db.add(pain_point)
+    db.commit()
+    db.refresh(pain_point)
+    return pain_point_to_dict(pain_point)
 
 
 @router.post("/relay-runs/{run_id}/advance")
@@ -369,7 +438,7 @@ def advance_relay_run(run_id: int, db: DbSession = Depends(get_db)):
     if run.status != "writing":
         raise HTTPException(409, f"relay run is {run.status}, not writing")
     _maybe_advance(db, run, force=True)
-    return _host_state(run)
+    return _host_state(run, db)
 
 
 # --------------------------------------------------------------------------
@@ -392,8 +461,8 @@ def peek_relay_run(code: str, db: DbSession = Depends(get_db)):
 def join_relay_run(code: str, payload: JoinRequest, db: DbSession = Depends(get_db)):
     run = _load_run_by_code(db, code)
     if run.status != "lobby":
-        # Seats are the rotation; a late seat would need a chain of its own
-        # and break the "nobody gets their own paper back" guarantee.
+        # Seats are the rotation; a late seat would need a chain of its own,
+        # written from round one, that nobody has time left to start.
         raise HTTPException(409, "這一場已經開始了，下一場再一起來")
     if len(run.participants) >= relay.MAX_PARTICIPANTS:
         raise HTTPException(409, "人數已滿")

@@ -225,6 +225,8 @@ class PainPoint(Base):
         default=None,
     )
     """The discovery run that surfaced it, for source == "discovery"."""
+    relay_chain_index: Mapped[Optional[int]] = mapped_column(default=None)
+    """For one saved off a 多人接龍 wall: which chain of `method_run_id`."""
     created_at: Mapped[dt.datetime] = mapped_column(default=_now)
 
 

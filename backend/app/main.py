@@ -27,6 +27,9 @@ async def lifespan(app: FastAPI):
     # columns added to the models since this database file was created.
     sync_columns(engine)
     yield
+    # A tunnel started from the host screen must not outlive the app — not
+    # even across a `--reload`, which would orphan it on the public internet.
+    network.stop_managed_ngrok()
 
 
 app = FastAPI(title="Project Ideation Workbench", lifespan=lifespan)

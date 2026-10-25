@@ -105,8 +105,9 @@ def test_discovery_is_not_a_recommendable_method(client):
 
 
 def test_discovery_recommendation_draws_only_on_discovery_methods(client, session_id, provider):
-    # The model even names an ideation method; it is dropped, and the list is
-    # as long as the discovery catalog allows rather than a padded three.
+    # The model even names an ideation method; it is dropped, the one it left
+    # out is topped up from the catalog, and the list is as long as the
+    # discovery catalog allows rather than a padded three.
     provider.step_output = {
         "adjustment": "只有一個方法。",
         "items": [
@@ -120,11 +121,26 @@ def test_discovery_recommendation_draws_only_on_discovery_methods(client, sessio
     )
     assert res.status_code == 200, res.text
     recs = res.json()["recommendations"]
-    assert [r["method"] for r in recs] == ["pain_discovery"]
+    assert [r["method"] for r in recs] == ["pain_discovery", "relay"]
     assert recs[0]["rationale"] == "從日常片段回想最適合。"
     assert res.json()["rule_ranking"] == []
     assert "痛點發想" in provider.calls[-1]["system_prompt"]
     assert "scamper" not in provider.calls[-1]["user_prompt"]
+
+
+def test_a_team_of_one_is_never_offered_the_relay_for_discovery(client, provider):
+    res = client.post(
+        "/sessions",
+        json={"team_size": 1, "has_clear_problem": False, "has_existing_product": False},
+    )
+    session_id = res.json()["id"]
+    provider.step_output = {"adjustment": "", "items": [{"method": "relay", "rationale": "x"}]}
+    res = client.post(
+        f"/sessions/{session_id}/method-recommendation",
+        params={"provider": "fake", "stage": "discovery"},
+    )
+    assert [r["method"] for r in res.json()["recommendations"]] == ["pain_discovery"]
+    assert "多人接龍" not in provider.calls[-1]["user_prompt"]
 
 
 def test_unknown_recommendation_stage_is_rejected(client, session_id, provider):

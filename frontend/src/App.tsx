@@ -512,8 +512,10 @@ function App() {
 
   // The catalog's own total, not `run.steps.length` — the backend adds one
   // step row at a time. A relay's length is set by the room at start.
+  const inProgress = (run: MethodRun | null) =>
+    run?.status === 'running' || run?.status === 'lobby' || run?.status === 'writing'
   const progressOf = (run: MethodRun | null) => {
-    if (!run || run.status !== 'running') return undefined
+    if (!run || !inProgress(run) || run.status === 'lobby') return undefined
     const total = run.relay_rounds ?? getMethod(run.method_name)?.step_count ?? run.steps.length
     return `${Math.min(run.current_step_index + 1, total)}/${total}`
   }
@@ -537,7 +539,7 @@ function App() {
         progressOf(discoveryRun) ??
         (sessionPainPoints.length ? String(sessionPainPoints.length) : undefined),
       state:
-        discoveryRun?.status === 'running'
+        inProgress(discoveryRun)
           ? 'current'
           : sessionPainPoints.length > 0 || painPoint
             ? 'done'
@@ -640,7 +642,30 @@ function App() {
           />
         )}
 
-        {tab === 'discover' && discoveryRun && (
+        {/* 多人接龍 is one of 痛點發想's methods, so it lives on this tab — but
+            its run is a room of phones rather than one person's transcript. */}
+        {tab === 'discover' && discoveryRun?.mode === 'relay' && (
+          <RelayHostView
+            runId={discoveryRun.id}
+            onProgress={(status, roundIndex, rounds) =>
+              setDiscoveryRun((prev) =>
+                prev && prev.id === discoveryRun.id
+                  ? {
+                      ...prev,
+                      status,
+                      current_step_index: roundIndex,
+                      relay_rounds: rounds,
+                    }
+                  : prev,
+              )
+            }
+            onRestart={() => startRun('discover', discoveryRun.method_name)}
+            restarting={starting}
+            onUsePainPoint={takePainPoint}
+          />
+        )}
+
+        {tab === 'discover' && discoveryRun && discoveryRun.mode !== 'relay' && (
           <FrameworkRunView
             run={discoveryRun}
             {...runProps('discover')}
@@ -685,29 +710,7 @@ function App() {
           />
         )}
 
-        {/* 多人接龍 is one of the methods, so it lives on the same tab — but its
-            run is a room of phones rather than one person's transcript. */}
-        {tab === 'ideate' && ideationRun?.mode === 'relay' && (
-          <RelayHostView
-            runId={ideationRun.id}
-            onProgress={(status, roundIndex, rounds) =>
-              setIdeationRun((prev) =>
-                prev && prev.id === ideationRun.id
-                  ? {
-                      ...prev,
-                      status,
-                      current_step_index: roundIndex,
-                      relay_rounds: rounds,
-                    }
-                  : prev,
-              )
-            }
-            onRestart={() => startRun('ideate', ideationRun.method_name)}
-            restarting={starting}
-          />
-        )}
-
-        {tab === 'ideate' && ideationRun && ideationRun.mode !== 'relay' && (
+        {tab === 'ideate' && ideationRun && (
           <FrameworkRunView
             run={ideationRun}
             {...runProps('ideate')}

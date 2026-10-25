@@ -18,12 +18,19 @@ from app.main import app
 # --------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("n", [2, 3, 4, 5, 8])
-def test_nobody_gets_their_own_chain_back(n):
+@pytest.mark.parametrize("n", [3, 4, 5, 8])
+def test_with_enough_people_nobody_gets_their_own_chain_back(n):
     rounds = len(relay.ladder_for(n))
     for seat in range(n):
         held = [relay.chain_for(seat, r, n) for r in range(rounds)]
         assert len(set(held)) == rounds
+
+
+def test_in_a_small_room_a_paper_comes_back_but_never_twice_running():
+    rounds = len(relay.ladder_for(2))
+    for seat in range(2):
+        held = [relay.chain_for(seat, r, 2) for r in range(rounds)]
+        assert all(a != b for a, b in zip(held, held[1:]))
 
 
 @pytest.mark.parametrize("n", [2, 3, 4, 7])
@@ -35,9 +42,9 @@ def test_every_round_every_chain_has_exactly_one_writer(n):
 
 
 @pytest.mark.parametrize("n", [2, 3, 6])
-def test_every_ladder_fits_the_room_and_ends_on_the_pain(n):
+def test_every_room_gets_the_whole_ladder_ending_on_the_pain(n):
     ladder = relay.ladder_for(n)
-    assert len(ladder) <= n
+    assert ladder == relay.DEFAULT_RUNGS
     assert ladder[0]["role"] == "who" and ladder[-1]["role"] == "pain"
 
 
@@ -145,23 +152,19 @@ def test_cannot_start_alone(client, open_run):
     assert res.status_code == 400
 
 
-def test_the_lobby_previews_the_ladder_for_the_room_so_far(client, open_run):
+def test_the_lobby_previews_the_whole_ladder(client, open_run):
     run = open_run()
-    code = run["join_code"]
-    assert len(run["rungs"]) == 2
-    for name in ["A", "B", "C"]:
-        _join(client, code, name)
-    assert len(client.get(f"/relay-runs/{run['id']}").json()["rungs"]) == 3
+    assert len(run["rungs"]) == 3
 
 
-def test_two_people_play_a_two_rung_relay(client, open_run):
+def test_two_people_play_all_three_rounds(client, open_run):
     run = open_run()
     code = run["join_code"]
     tokens = {name: _join(client, code, name) for name in ["阿明", "小華"]}
     started = client.post(f"/relay-runs/{run['id']}/start").json()
-    assert started["status"] == "writing" and started["rounds"] == 2
+    assert started["status"] == "writing" and started["rounds"] == 3
 
-    for round_index in range(2):
+    for round_index in range(3):
         for name, token in tokens.items():
             assert _submit(client, code, token, f"{name}-{round_index}").status_code == 200
 
@@ -169,8 +172,9 @@ def test_two_people_play_a_two_rung_relay(client, open_run):
     assert state["status"] == "revealed"
     assert len(state["chains"]) == 2
     for chain in state["chains"]:
-        # Both hands on every chain, and nobody got their own paper back.
-        assert len({c["author"] for c in chain["cells"]}) == 2
+        authors = [c["author"] for c in chain["cells"]]
+        # The paper went back to whoever started it for the last layer.
+        assert authors[0] == authors[2] != authors[1]
         assert chain["cells"][-1]["role"] == "pain"
 
 
@@ -347,6 +351,61 @@ def test_a_relay_run_cannot_be_answered_like_a_solo_run(client, started):
 # --------------------------------------------------------------------------
 
 
+# --------------------------------------------------------------------------
+# into the pain point library
+# --------------------------------------------------------------------------
+
+
+def _play_two(client, open_run, answers: dict[str, list[str]]) -> dict:
+    """Two phones, every round answered from `answers[name]`; returns the
+    revealed host state."""
+    run = open_run()
+    code = run["join_code"]
+    tokens = {name: _join(client, code, name) for name in answers}
+    client.post(f"/relay-runs/{run['id']}/start")
+    for round_index in range(3):
+        for name, token in tokens.items():
+            assert _submit(client, code, token, answers[name][round_index]).status_code == 200
+    return client.get(f"/relay-runs/{run['id']}").json()
+
+
+def test_a_chain_is_saved_as_a_pain_point_in_the_rooms_own_words(client, open_run):
+    state = _play_two(
+        client,
+        open_run,
+        {"阿明": ["夜班護理師", "半夜交班", "交班單寫不完"], "小華": ["里幹事", "颱風前一天", ""]},
+    )
+    chain = state["chains"][0]
+    assert chain["pain_point_id"] is None
+    res = client.post(f"/relay-runs/{state['id']}/chains/0/pain-point")
+    assert res.status_code == 200, res.text
+    pain = res.json()
+    # Chain 0 started with 阿明, went to 小華, and came back to 阿明.
+    assert pain["who"] == "夜班護理師"
+    assert pain["context"] == "颱風前一天"
+    assert pain["statement"] == "交班單寫不完"
+    assert pain["source"] == "discovery" and pain["method_run_id"] == state["id"]
+
+    # Saved once: the wall says so, and saving again hands back the same one.
+    state = client.get(f"/relay-runs/{state['id']}").json()
+    assert state["chains"][0]["pain_point_id"] == pain["id"]
+    again = client.post(f"/relay-runs/{state['id']}/chains/0/pain-point").json()
+    assert again["id"] == pain["id"]
+    assert [p["id"] for p in client.get("/pain-points").json()].count(pain["id"]) == 1
+
+
+def test_a_chain_with_no_pain_written_cannot_be_saved(client, open_run):
+    state = _play_two(client, open_run, {"阿明": ["a", "b", "c"], "小華": ["d", "e", ""]})
+    # Chain 1's last layer is 小華's empty one.
+    assert client.post(f"/relay-runs/{state['id']}/chains/1/pain-point").status_code == 400
+    assert client.post(f"/relay-runs/{state['id']}/chains/5/pain-point").status_code == 404
+
+
+def test_nothing_is_saved_before_the_reveal(client, started):
+    run, _ = started
+    assert client.post(f"/relay-runs/{run['id']}/chains/0/pain-point").status_code == 409
+
+
 @pytest.fixture
 def phone(client):
     """A client that looks like a phone on the Wi-Fi. Shares the app — and so
@@ -363,10 +422,13 @@ def test_phones_reach_participant_routes_only(client, phone, open_run, session_i
     for method, path in [
         ("get", f"/relay-runs/{run['id']}"),
         ("post", f"/relay-runs/{run['id']}/start"),
+        ("post", f"/relay-runs/{run['id']}/chains/0/pain-point"),
         ("get", f"/sessions/{session_id}/ideas"),
         ("post", "/sessions"),
         ("get", "/providers/health"),
         ("get", "/network/join-origins"),
+        ("post", "/network/ngrok/start"),
+        ("post", "/network/ngrok/stop"),
     ]:
         assert getattr(phone, method)(path).status_code == 403, path
 

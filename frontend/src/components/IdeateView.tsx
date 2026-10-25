@@ -59,7 +59,7 @@ export function IdeateView({
   onGoToSetup,
   onGoToDiscover,
 }: Props) {
-  const { methods: catalog, get } = useMethodCatalog()
+  const { methods: catalog } = useMethodCatalog()
   const allMethods = catalog.filter((m) => m.stage === 'ideation')
   const [selectedMethod, setSelectedMethod] = useState<string | null>(null)
   // Arriving with a pain point already chosen — from 痛點發想, the library,
@@ -157,14 +157,7 @@ export function IdeateView({
           onValueChange={setTab}
           finish={
             starting ? (
-              <AiWorking
-                label="正在開場"
-                detail={
-                  selectedMethod && get(selectedMethod)?.mode === 'relay'
-                    ? '準備 QR code 讓大家加入'
-                    : '準備第一個引導問題'
-                }
-              />
+              <AiWorking label="正在開場" detail="準備第一個引導問題" />
             ) : (
               <Button
                 size="sm"

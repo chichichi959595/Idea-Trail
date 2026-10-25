@@ -30,9 +30,11 @@ def test_catalog_covers_exactly_the_implemented_agents():
 
 def test_discovery_is_in_the_catalog_but_never_a_method():
     discovery = [e["name"] for e in method_catalog() if e["stage"] == "discovery"]
-    assert discovery == list(DISCOVERY_AGENTS) == ["pain_discovery"]
+    assert discovery == list(DISCOVERY_AGENTS) == ["pain_discovery", "relay"]
     assert "pain_discovery" not in METHOD_ORDER
-    assert get_framework_agent("pain_discovery").stage == "discovery"
+    # 多人接龍 ends in pain points, so it's 痛點發想's, not a 專案發想 method.
+    assert "relay" not in METHOD_ORDER
+    assert get_framework_agent("relay").stage == "discovery"
 
 
 def test_short_label_defaults_to_the_full_label():

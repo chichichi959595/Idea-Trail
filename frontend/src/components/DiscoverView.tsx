@@ -49,7 +49,7 @@ export function DiscoverView({
   startError,
   onGoToSetup,
 }: Props) {
-  const { methods: catalog } = useMethodCatalog()
+  const { methods: catalog, get } = useMethodCatalog()
   const methods = catalog.filter((m) => m.stage === 'discovery')
   const [picked, setPicked] = useState<string | null>(null)
   // With a single method in the catalog there is nothing to choose between,
@@ -57,6 +57,7 @@ export function DiscoverView({
   // button works without a click on the only card.
   const selected = picked ?? (methods.length === 1 ? methods[0].name : null)
   const [tab, setTab] = useState('method')
+  const relay = selected !== null && get(selected)?.mode === 'relay'
 
   return (
     <Screen>
@@ -71,7 +72,10 @@ export function DiscoverView({
           onValueChange={setTab}
           finish={
             starting ? (
-              <AiWorking label="正在開場" detail="準備第一個引導問題" />
+              <AiWorking
+                label="正在開場"
+                detail={relay ? '準備 QR code 讓大家加入' : '準備第一個引導問題'}
+              />
             ) : (
               <Button
                 size="sm"
@@ -119,7 +123,9 @@ export function DiscoverView({
             {
               id: 'ready',
               label: '開始之前',
-              description: '走完之後，AI 會把找到的困擾整理成幾筆痛點，存進痛點庫。',
+              description: relay
+                ? '全部寫完後一起看所有的鏈，把值得追的那幾條存進痛點庫。'
+                : '走完之後，AI 會把找到的困擾整理成幾筆痛點，存進痛點庫。',
               content: selected ? (
                 <MethodBrief method={selected} />
               ) : (

@@ -10,18 +10,22 @@ class RelayAgent(FrameworkAgent):
     path: a lobby that phones join, and the relay grid in place of `steps`
     (see app/api/relay.py).
 
-    `steps` is the full (3+ people) ladder expressed as StepSpecs, so the catalog's
-    step count and the per-round timers come from the same place as every
-    other method's. Nothing walks these as steps.
+    It belongs to 痛點發想: the ladder ends on the pain layer, and the chains
+    the room picks off the wall go into the pain point library.
+
+    `steps` is the ladder expressed as StepSpecs, so the catalog's step count
+    and the per-round timers come from the same place as every other
+    method's. Nothing walks these as steps.
     """
 
     method_name = "relay"
     method_label = "多人接龍"
     mode = "relay"
+    stage = "discovery"
     min_team_size = relay.MIN_PARTICIPANTS
     description = (
-        "2 人以上坐在一起，各自用手機同時寫、往右傳：使用者 → 場景 → 卡點"
-        "（兩個人時縮成兩層），最後一次公布所有的鏈。適合還沒有方向、而且人在現場的團隊。"
+        "2 人以上用手機同時寫、往右傳：使用者 → 場景 → 卡點，公布後挑值得的存進痛點庫。"
+        "人少也走滿三輪。"
     )
     tutorial_intro = (
         "紙本 Brainwriting 的線上版。每個人手上同時有一張紙，寫完一層就往右傳；"
@@ -31,7 +35,7 @@ class RelayAgent(FrameworkAgent):
     tutorial_how_to = (
         "主持人開場後，大家用手機掃畫面上的 QR code 加入。每一輪限時寫一兩句，"
         "只往下接一層、不修改上面已經寫的；看不懂的地方按「看不懂」照樣往下寫。"
-        "全部寫完後在主持人的畫面上一起看所有的鏈。"
+        "全部寫完後在主持人的畫面上一起看所有的鏈，討論完把值得追的存進痛點庫。"
     )
     steps = [
         StepSpec(rung["role"], rung["question"], timer_seconds=rung["timer_seconds"])

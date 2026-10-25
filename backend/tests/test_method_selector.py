@@ -59,27 +59,24 @@ def test_always_returns_real_methods():
     assert all(m in METHOD_ORDER for m in result)
 
 
-def test_relay_needs_a_room_without_a_direction():
-    """多人接龍 only earns a point from the rules when there are enough people
-    to pass papers around *and* no direction yet."""
+def test_relay_is_no_longer_a_project_method():
+    """多人接龍 moved to 痛點發想 — 專案發想's rules never score it."""
     from app.agents.method_selector import score_methods
 
-    assert score_methods(FakeSession(False, None, team_size=4))["relay"] == 1
-    assert score_methods(FakeSession(True, None, team_size=6))["relay"] == 0
+    assert "relay" not in score_methods(FakeSession(False, None, team_size=4))
 
 
 @pytest.mark.parametrize("team_size", [0, 1])
 def test_a_team_too_small_for_the_relay_is_never_offered_it(team_size):
-    from app.agents.method_selector import build_prompt, score_methods
+    from app.agents.method_selector import build_discovery_prompt
 
     session = FakeSession(False, None, team_size=team_size)
     for attr in ("time_budget", "tech_background", "domain_pref", "constraints_text",
                  "clear_problem_text", "existing_product_text"):
         setattr(session, attr, None)
 
-    assert "relay" not in score_methods(session)
-    prompt = build_prompt(session)
-    assert "relay" not in prompt.allowed
+    prompt = build_discovery_prompt(session)
+    assert prompt.allowed == ["pain_discovery"]
     assert "relay" not in prompt.schema["properties"]["items"]["items"]["properties"]["method"]["enum"]
     assert "多人接龍" not in prompt.user_prompt
     # Even if the model names it anyway (the enum isn't enforced on every route).

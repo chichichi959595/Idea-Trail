@@ -10,8 +10,8 @@ import secrets
 from typing import Literal, TypedDict
 
 MIN_PARTICIPANTS = 2
-"""One person has nobody to pass a paper to. Two is enough, on a shorter
-ladder — see `ladder_for`."""
+"""One person has nobody to pass a paper to. Two is enough: they play the
+same ladder as everyone else, with papers coming back round — see `ladder_for`."""
 
 MAX_PARTICIPANTS = 40
 
@@ -65,38 +65,25 @@ DEFAULT_RUNGS: list[Rung] = [
 ]
 
 
-# Two people can only pass a paper once before it comes back to whoever
-# started it, so they get two rungs instead of three. The second one asks for
-# the scene and the snag together, so a two-person chain still ends on a
-# concrete pain point rather than stopping at "when would they need help".
-TWO_PERSON_RUNGS: list[Rung] = [
-    DEFAULT_RUNGS[0],
-    {
-        "question": "這個使用者在什麼情況下會卡住？他實際卡在哪裡？",
-        "role": "pain",
-        "timer_seconds": timer_for(1),
-    },
-]
-
-
 def ladder_for(n_participants: int) -> list[Rung]:
     """The question ladder for a room of this size.
 
-    Rounds can never outnumber people, or somebody gets their own paper back —
-    so the room's size decides how many layers one line of thought is cut
-    into. Every ladder ends on the pain layer, whatever its length.
+    Every room gets the whole ladder. With fewer people than rungs a paper
+    comes back round to someone who has already written on it — it used to
+    be cut short to stop that, but a two-person room then never got past
+    "who", and a second turn on your own line, after someone else has bent
+    it, is fine.
     """
-    if n_participants >= len(DEFAULT_RUNGS):
-        return DEFAULT_RUNGS
-    return TWO_PERSON_RUNGS
+    return DEFAULT_RUNGS
 
 
 def chain_for(seat_index: int, round_index: int, n: int) -> int:
     """Which chain seat `seat_index` holds in round `round_index`.
 
     Chain c starts at seat c and moves one seat to the right each round, so
-    the inverse is seat - round. With n >= rounds (which `ladder_for`
-    guarantees), nobody ever gets back a chain they already wrote on.
+    the inverse is seat - round. With at least as many people as rounds,
+    nobody gets back a chain they already wrote on; with fewer, papers come
+    round again — but never twice in a row, as long as there are two seats.
     """
     return (seat_index - round_index) % n
 

@@ -1,4 +1,5 @@
 import { BASE_HEADERS, BASE_URL } from '../api'
+import type { PainPoint } from '../types'
 import type { JoinOrigins, RelayHostState, RelayPhoneState } from './types'
 
 /**
@@ -47,7 +48,11 @@ export const relayApi = {
   get: (runId: number) => call<RelayHostState>(`/relay-runs/${runId}`),
   start: (runId: number) => call<RelayHostState>(`/relay-runs/${runId}/start`, post()),
   advance: (runId: number) => call<RelayHostState>(`/relay-runs/${runId}/advance`, post()),
+  savePainPoint: (runId: number, chainIndex: number) =>
+    call<PainPoint>(`/relay-runs/${runId}/chains/${chainIndex}/pain-point`, post()),
   joinOrigins: () => call<JoinOrigins>('/network/join-origins'),
+  startNgrok: (port: number) => call<JoinOrigins>('/network/ngrok/start', post({ port })),
+  stopNgrok: () => call<JoinOrigins>('/network/ngrok/stop', post()),
 
   // phone
   peek: (code: string) =>

@@ -1,3 +1,4 @@
+import type { ReactNode } from 'react'
 import { HelpCircleIcon } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Eyebrow } from '@/components/design/typography'
@@ -15,10 +16,13 @@ import type { RelayChain } from './types'
 export function ChainWall({
   chains,
   showAuthors = false,
+  actions,
   className,
 }: {
   chains: RelayChain[]
   showAuthors?: boolean
+  /** Under each chain — the host's 「存進痛點庫」. */
+  actions?: (chain: RelayChain) => ReactNode
   className?: string
 }) {
   return (
@@ -62,6 +66,7 @@ export function ChainWall({
               </li>
             ))}
           </ol>
+          {actions && <div className="mt-auto flex flex-wrap gap-2 pt-4">{actions(chain)}</div>}
         </article>
       ))}
     </div>

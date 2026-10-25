@@ -231,7 +231,7 @@ export function PainPointLibrary({
       id: 'statement',
       header: '痛點',
       sortValue: (p) => p.statement,
-      className: 'min-w-56 max-w-sm font-medium text-pretty',
+      className: 'min-w-48 max-w-sm font-medium text-pretty',
       cell: (p) => p.statement,
     },
     ...(
@@ -245,7 +245,7 @@ export function PainPointLibrary({
         id: key,
         header,
         sortValue: (p) => p[key] ?? '￿',
-        className: 'min-w-32 max-w-56 text-foreground/80',
+        className: 'min-w-28 max-w-56 text-foreground/80',
         cell: (p) => p[key] ?? <span className="text-muted-foreground">—</span>,
       }),
     ),
@@ -285,7 +285,7 @@ export function PainPointLibrary({
   ]
 
   return (
-    <Screen wide>
+    <Screen>
       <ScreenHeader
         title="痛點庫"
         description="所有場次找到或寫下的痛點。挑一個就能帶去專案發想。"

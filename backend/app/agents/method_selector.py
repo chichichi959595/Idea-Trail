@@ -3,8 +3,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from app.agents.framework import (
-    DISCOVERY_ORDER,
     METHOD_ORDER,
+    eligible_discovery_methods,
     eligible_methods,
     method_descriptions,
     method_labels,
@@ -63,8 +63,8 @@ def score_methods(session: IdeationSession, *, has_pain_point: bool = False) -> 
     model as a suggestion and lets it decide, and falls back to this order
     only when the model's answer is unusable.
     """
-    # Only what this team can play: a method it's too small for (多人接龍 with
-    # two people) isn't scored low, it isn't in the running at all.
+    # Only what this team can play: a method it's too small for isn't scored
+    # low, it isn't in the running at all.
     scores = {m: 0 for m in eligible_methods(session.team_size)}
     # A pain point picked for this round settles the question whatever the
     # setup screen said: the team has a clear problem now.
@@ -89,10 +89,6 @@ def score_methods(session: IdeationSession, *, has_pain_point: bool = False) -> 
     # That field is gone, and whether a team is tech-driven now only shows up
     # in their free-text 技術背景 — which the rules can't read, so it's left to
     # the model to surface this method when the text calls for it.
-    if clear_problem is False and session.team_size is not None:
-        # 接龍最擅長的是「還沒有方向」。人太少的團隊已經被 eligible_methods
-        # 整個排除了；這裡只多要求人數是真的填了——沒填就不知道現場湊不湊得到人。
-        bump("relay", 1)
     if clear_problem:
         # 已經有方向時，隨機刺激比較能發揮強迫聯想的效果
         bump("random_input", 1)
@@ -221,7 +217,8 @@ def build_discovery_prompt(session: IdeationSession) -> SelectorPrompt:
     ranks the catalog outright, and an unusable answer falls back to catalog
     order.
     """
-    allowed = list(DISCOVERY_ORDER)
+    # 多人接龍 needs a room; a team that said it's one person never sees it.
+    allowed = eligible_discovery_methods(session.team_size)
     count = min(RECOMMENDATION_COUNT, len(allowed))
     user_prompt = (
         f"{_render_team(session)}\n"

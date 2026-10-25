@@ -28,6 +28,8 @@ export interface RelayChainCell {
 export interface RelayChain {
   chain_index: number
   cells: RelayChainCell[]
+  /** Host view only: the pain point this chain was saved as, once it has been. */
+  pain_point_id?: number | null
 }
 
 export interface RoundProgress {
@@ -89,7 +91,17 @@ export interface RelayPhoneState {
   chains?: RelayChain[]
 }
 
+/**
+ * The tunnel as the backend sees it. `running` is one it started (and can
+ * stop); `external` is one the host opened in a terminal, left alone.
+ */
+export interface NgrokStatus {
+  state: 'missing' | 'idle' | 'starting' | 'running' | 'external' | 'failed'
+  error: { kind: 'no_authtoken' | 'session_limit' | 'other'; detail: string } | null
+}
+
 export interface JoinOrigins {
   lan_ip: string | null
   ngrok_url: string | null
+  ngrok: NgrokStatus
 }

@@ -1,9 +1,13 @@
 import { useEffect, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
+import { toast } from 'sonner'
 import { QRCodeSVG } from 'qrcode.react'
 import {
+  ArrowRightIcon,
+  BookmarkPlusIcon,
   CheckIcon,
   CopyIcon,
+  Loader2Icon,
   PlayIcon,
   RotateCcwIcon,
   SkipForwardIcon,
@@ -19,7 +23,7 @@ import { ErrorState, Notice } from '@/components/design/states'
 import { relayApi } from './api'
 import { ChainWall } from './ChainWall'
 import { useDeadline } from './useDeadline'
-import type { JoinOrigins, RelayHostState } from './types'
+import type { JoinOrigins, RelayChain, RelayHostState } from './types'
 
 /**
  * The laptop side of 多人接龍: the QR code, the roster, the round clock, and
@@ -43,6 +47,7 @@ export function RelayHostView({
   onProgress,
   onRestart,
   restarting,
+  onUsePainPoint,
 }: {
   runId: number
   /** Reports status and round back up, so the rail's progress stays in step
@@ -55,6 +60,8 @@ export function RelayHostView({
   /** Opens a fresh run of the same method, for another round with the room. */
   onRestart: () => void
   restarting: boolean
+  /** Takes a pain point saved off the wall on into 專案發想. */
+  onUsePainPoint: (painPointId: number) => void
 }) {
   const queryClient = useQueryClient()
   const queryKey = ['relay-host', runId]
@@ -125,7 +132,15 @@ export function RelayHostView({
       />
     )
   }
-  return <Reveal run={run} onRestart={onRestart} restarting={restarting} />
+  return (
+    <Reveal
+      run={run}
+      onRestart={onRestart}
+      restarting={restarting}
+      onSaved={(next) => queryClient.setQueryData(queryKey, next)}
+      onUsePainPoint={onUsePainPoint}
+    />
+  )
 }
 
 // --------------------------------------------------------------------------
@@ -145,18 +160,40 @@ function Lobby({
   error: string | null
   onStart: () => void
 }) {
-  // Re-read now and then: an ngrok tunnel started after the lobby opened
-  // should show up without a reload.
+  // Re-read now and then: an ngrok tunnel started after the lobby opened —
+  // or ngrok installed in another window — should show up without a reload.
+  const queryClient = useQueryClient()
   const { data: origins } = useQuery({
     queryKey: ['relay-join-origins'],
     queryFn: relayApi.joinOrigins,
-    refetchInterval: 5000,
+    refetchInterval: (q) => (q.state.data?.ngrok.state === 'starting' ? 1000 : 5000),
   })
   const [choice, setChoice] = useState<OriginChoice | null>(null)
+  const [tunnelBusy, setTunnelBusy] = useState(false)
+  const [tunnelError, setTunnelError] = useState<string | null>(null)
+
+  async function tunnel(action: 'start' | 'stop') {
+    setTunnelBusy(true)
+    setTunnelError(null)
+    try {
+      const next = await (action === 'start'
+        ? relayApi.startNgrok(frontendPort())
+        : relayApi.stopNgrok())
+      queryClient.setQueryData(['relay-join-origins'], next)
+      setChoice(action === 'start' && next.ngrok_url ? 'ngrok' : null)
+    } catch (e) {
+      setTunnelError(e instanceof Error ? e.message : String(e))
+    } finally {
+      setTunnelBusy(false)
+    }
+  }
+  const ngrokState = origins?.ngrok.state
+  const ngrokStarting = tunnelBusy || ngrokState === 'starting'
   const effective: OriginChoice | null =
     choice ?? (origins?.ngrok_url ? 'ngrok' : origins?.lan_ip ? 'lan' : null)
   const origin = originFor(effective, origins)
-  const joinUrl = origin ? `${origin}/join/${run.join_code}` : null
+  // At the root, not `/join/…` — see the comment on `join` in main.tsx.
+  const joinUrl = origin ? `${origin}/?join=${run.join_code}` : null
   const reachable = useReachable(effective === 'lan' ? origin : null)
 
   const n = run.participants.length
@@ -206,13 +243,24 @@ function Lobby({
                 />
                 <OriginButton
                   active={effective === 'ngrok'}
-                  disabled={!origins?.ngrok_url}
-                  onClick={() => setChoice('ngrok')}
-                  label="ngrok"
+                  // Without a tunnel yet, this is the button that opens one.
+                  disabled={!origins || ngrokState === 'missing' || ngrokStarting}
+                  onClick={() => (origins?.ngrok_url ? setChoice('ngrok') : tunnel('start'))}
+                  label={
+                    ngrokStarting ? 'ngrok 啟動中…' : origins?.ngrok_url ? 'ngrok' : '開啟 ngrok'
+                  }
+                  busy={ngrokStarting}
                 />
               </div>
               {joinUrl && <JoinLink url={joinUrl} />}
-              <OriginHint choice={effective} origins={origins} reachable={reachable} />
+              <OriginHint
+                choice={effective}
+                origins={origins}
+                reachable={reachable}
+                requestError={tunnelError}
+                stopping={tunnelBusy}
+                onStop={() => tunnel('stop')}
+              />
             </Section>
 
             <Section className="gap-3">
@@ -243,7 +291,7 @@ function Lobby({
         <Small className="text-xs">
           {enough
             ? `開始後座位就固定了，晚到的人只能用看的。共 ${run.rungs.length} 輪${
-                run.rungs.length < 3 ? '（兩個人時縮成兩層，再多一人就是完整的三層）' : ''
+                n < run.rungs.length ? '，人比輪數少，紙會傳回自己手上再接一層' : ''
               }。`
             : `再等 ${run.min_participants - n} 個人才能開始。`}
         </Small>
@@ -254,6 +302,12 @@ function Lobby({
       </ScreenFooter>
     </Screen>
   )
+}
+
+/** The dev server's port, which is what the tunnel has to point at. */
+function frontendPort() {
+  if (window.location.port) return Number(window.location.port)
+  return window.location.protocol === 'https:' ? 443 : 80
 }
 
 function originFor(choice: OriginChoice | null, origins: JoinOrigins | undefined) {
@@ -298,11 +352,13 @@ function OriginButton({
   disabled,
   onClick,
   label,
+  busy = false,
 }: {
   active: boolean
   disabled: boolean
   onClick: () => void
   label: string
+  busy?: boolean
 }) {
   return (
     <Button
@@ -312,7 +368,7 @@ function OriginButton({
       onClick={onClick}
       aria-pressed={active}
     >
-      {active && <CheckIcon />}
+      {busy ? <Loader2Icon className="animate-spin" /> : active && <CheckIcon />}
       {label}
     </Button>
   )
@@ -347,36 +403,108 @@ function OriginHint({
   choice,
   origins,
   reachable,
+  requestError,
+  stopping,
+  onStop,
 }: {
   choice: OriginChoice | null
   origins: JoinOrigins | undefined
   reachable: boolean | null
+  requestError: string | null
+  stopping: boolean
+  onStop: () => void
 }) {
   if (!origins) return null
-  if (choice === 'lan' && reachable === false) {
-    return (
-      <Notice tone="warning" title="手機連不到這個位址">
-        前端只聽在 localhost 上。改用 <Mono>pnpm dev:team</Mono> 重新啟動前端，讓同一個 Wi-Fi
-        的手機連得進來。
-      </Notice>
-    )
+  const ngrok = origins.ngrok
+  if (requestError) {
+    return <ErrorState title="ngrok 的請求沒有成功" detail={requestError} />
+  }
+  if (ngrok.state === 'failed' && ngrok.error) {
+    return <NgrokFailure error={ngrok.error} />
   }
   if (choice === 'ngrok') {
     return (
-      <Small className="text-xs">
-        免費版 ngrok 第一次打開時會先跳一頁警告，按「Visit Site」就會進來，之後不會再出現。
-      </Small>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <Small className="text-xs">
+          免費版 ngrok 第一次打開時會先跳一頁警告，按「Visit Site」就會進來，之後不會再出現。
+        </Small>
+        {/* Only a tunnel started from here; one from the host's terminal is theirs to close. */}
+        {ngrok.state === 'running' && (
+          <Button variant="ghost" size="xs" disabled={stopping} onClick={onStop}>
+            關閉隧道
+          </Button>
+        )}
+      </div>
     )
   }
-  if (!origins.ngrok_url) {
+  // A Wi-Fi the phones can't use is exactly when ngrok matters, so the
+  // install steps show alongside that warning rather than behind it.
+  const lanBroken = choice === 'lan' && reachable === false
+  return (
+    <>
+      {lanBroken && (
+        <Notice tone="warning" title="手機連不到這個位址">
+          前端只聽在 localhost 上。改用 <Mono>pnpm dev:team</Mono> 重新啟動前端，讓同一個 Wi-Fi
+          的手機連得進來{ngrok.state === 'idle' && '，或按「開啟 ngrok」改走隧道'}。
+        </Notice>
+      )}
+      {ngrok.state === 'missing' ? (
+        <Small className="text-xs">
+          不在同一個網路時可以改用 ngrok，但這台電腦還沒裝：先跑 <Mono>brew install ngrok</Mono>
+          ，再到{' '}
+          <a
+            className="underline underline-offset-2"
+            href="https://dashboard.ngrok.com/get-started/your-authtoken"
+            target="_blank"
+            rel="noreferrer"
+          >
+            ngrok 註冊
+          </a>{' '}
+          拿 authtoken、跑 <Mono>ngrok config add-authtoken &lt;token&gt;</Mono>
+          。裝好之後「開啟 ngrok」就能按。
+        </Small>
+      ) : (
+        !lanBroken &&
+        !origins.ngrok_url && (
+          <Small className="text-xs">
+            手機要在同一個 Wi-Fi。不在同一個網路的話，按「開啟 ngrok」開一條隧道。
+          </Small>
+        )
+      )}
+    </>
+  )
+}
+
+function NgrokFailure({ error }: { error: NonNullable<JoinOrigins['ngrok']['error']> }) {
+  if (error.kind === 'no_authtoken') {
     return (
-      <Small className="text-xs">
-        手機要在同一個 Wi-Fi。不在同一個網路的話，另開終端機跑 <Mono>ngrok http 5173</Mono>
-        ，這裡會自動出現 ngrok 選項。
-      </Small>
+      <Notice tone="warning" title="ngrok 還沒設定 authtoken">
+        到{' '}
+        <a
+          className="underline underline-offset-2"
+          href="https://dashboard.ngrok.com/get-started/your-authtoken"
+          target="_blank"
+          rel="noreferrer"
+        >
+          ngrok 的後台
+        </a>{' '}
+        複製 authtoken，在終端機跑 <Mono>ngrok config add-authtoken &lt;token&gt;</Mono>
+        ，再按一次「開啟 ngrok」。
+      </Notice>
     )
   }
-  return null
+  if (error.kind === 'session_limit') {
+    return (
+      <Notice tone="warning" title="已經有另一個 ngrok 在跑">
+        免費版同一個帳號只能開一個 ngrok。把其他終端機或其他電腦上的 ngrok 關掉，再按一次「開啟 ngrok」。
+      </Notice>
+    )
+  }
+  return (
+    <Notice tone="warning" title="ngrok 開不起來">
+      <pre className="font-mono text-xs whitespace-pre-wrap">{error.detail}</pre>
+    </Notice>
+  )
 }
 
 // --------------------------------------------------------------------------
@@ -480,25 +608,51 @@ function Reveal({
   run,
   onRestart,
   restarting,
+  onSaved,
+  onUsePainPoint,
 }: {
   run: RelayHostState
   onRestart: () => void
   restarting: boolean
+  onSaved: (next: RelayHostState) => void
+  onUsePainPoint: (painPointId: number) => void
 }) {
+  const queryClient = useQueryClient()
   // Off by default. Whether names belong on a projected wall is still an open
   // question (`發散/多人接龍.md`); naming people can make them hold back.
   const [showAuthors, setShowAuthors] = useState(false)
+  const [saving, setSaving] = useState<number | null>(null)
   const chains = run.chains ?? []
   const flagged = chains.flatMap((c) => c.cells).filter((c) => c.flagged_unclear).length
+  const saved = chains.filter((c) => c.pain_point_id != null).length
+
+  async function save(chain: RelayChain) {
+    setSaving(chain.chain_index)
+    try {
+      const painPoint = await relayApi.savePainPoint(run.id, chain.chain_index)
+      onSaved({
+        ...run,
+        chains: chains.map((c) =>
+          c.chain_index === chain.chain_index ? { ...c, pain_point_id: painPoint.id } : c,
+        ),
+      })
+      queryClient.invalidateQueries({ queryKey: ['pain-points'] })
+    } catch (e) {
+      toast.error('存不進痛點庫', { description: e instanceof Error ? e.message : String(e) })
+    } finally {
+      setSaving(null)
+    }
+  }
 
   return (
     <Screen>
       <ScreenHeader
         title="公布"
-        description="同一份題目、不同的起點。看看哪幾條撞到同一個卡點，哪一條轉了最大的彎。"
+        description="同一份題目、不同的起點。看看哪幾條撞到同一個卡點，討論完把值得追的那幾條存進痛點庫。"
         meta={
           <div className="flex items-center gap-2">
             {flagged > 0 && <Badge variant="warning">{flagged} 格有人看不懂</Badge>}
+            {saved > 0 && <Badge variant="soft">{saved} 條已存進痛點庫</Badge>}
             <Small data-numeric className="text-xs">
               {chains.length} 條鏈
             </Small>
@@ -510,7 +664,41 @@ function Reveal({
           {chains.length === 0 ? (
             <Notice>這一場沒有任何一格被寫下來。</Notice>
           ) : (
-            <ChainWall chains={chains} showAuthors={showAuthors} />
+            <ChainWall
+              chains={chains}
+              showAuthors={showAuthors}
+              actions={(chain) =>
+                chain.pain_point_id != null ? (
+                  <>
+                    <Badge variant="soft">
+                      <CheckIcon />
+                      已存進痛點庫
+                    </Badge>
+                    <Button
+                      size="xs"
+                      variant="ghost"
+                      className="ml-auto"
+                      onClick={() => onUsePainPoint(chain.pain_point_id!)}
+                    >
+                      用這個去發想
+                      <ArrowRightIcon />
+                    </Button>
+                  </>
+                ) : chain.cells.some((c) => c.role === 'pain' && c.answer) ? (
+                  <Button
+                    size="xs"
+                    variant="outline"
+                    disabled={saving !== null}
+                    onClick={() => save(chain)}
+                  >
+                    <BookmarkPlusIcon />
+                    {saving === chain.chain_index ? '存進痛點庫中…' : '存進痛點庫'}
+                  </Button>
+                ) : (
+                  <Small className="text-xs">卡點那一層沒有人寫，存不了。</Small>
+                )
+              }
+            />
           )}
         </Section>
       </ScreenBody>

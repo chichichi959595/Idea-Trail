@@ -58,7 +58,7 @@ export function JoinApp({ code: initialCode }: { code?: string }) {
       <PhoneFrame>
         <CodeForm
           onSubmit={(c) => {
-            window.history.replaceState(null, '', `/join/${c}`)
+            window.history.replaceState(null, '', `/?join=${c}`)
             setCode(c)
             setToken(readToken(c))
           }}

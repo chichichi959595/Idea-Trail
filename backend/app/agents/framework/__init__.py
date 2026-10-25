@@ -28,7 +28,6 @@ FRAMEWORK_AGENTS: dict[str, FrameworkAgent] = {
         MashupAgent(),
         RandomInputAgent(),
         Crazy8sAgent(),
-        RelayAgent(),
     )
 }
 
@@ -40,7 +39,7 @@ METHOD_ORDER: list[str] = list(FRAMEWORK_AGENTS)
 # rules and method picker never offer them, and recommended separately on the
 # 痛點發想 screen. Declaration order is this catalog's order, as above.
 DISCOVERY_AGENTS: dict[str, FrameworkAgent] = {
-    agent.method_name: agent for agent in (PainDiscoveryAgent(),)
+    agent.method_name: agent for agent in (PainDiscoveryAgent(), RelayAgent())
 }
 
 
@@ -68,17 +67,20 @@ def method_catalog() -> list[dict]:
     return [type(agent).catalog_entry() for agent in agents]
 
 
-def eligible_methods(team_size: int | None) -> list[str]:
-    """The methods a team of this size can actually play, in catalog order.
+def _playable(agent: FrameworkAgent, team_size: int | None) -> bool:
+    # An unanswered team size rules nothing out — there's nothing to judge
+    # by, and the room can still turn out big enough on the day.
+    return team_size is None or agent.min_team_size is None or team_size >= agent.min_team_size
 
-    An unanswered team size rules nothing out — there's nothing to judge by,
-    and the room can still turn out big enough on the day.
-    """
-    return [
-        name
-        for name, agent in FRAMEWORK_AGENTS.items()
-        if team_size is None or agent.min_team_size is None or team_size >= agent.min_team_size
-    ]
+
+def eligible_methods(team_size: int | None) -> list[str]:
+    """The 專案發想 methods a team of this size can actually play, in catalog order."""
+    return [name for name, agent in FRAMEWORK_AGENTS.items() if _playable(agent, team_size)]
+
+
+def eligible_discovery_methods(team_size: int | None) -> list[str]:
+    """The same, for 痛點發想 — where 多人接龍 is the one with a minimum."""
+    return [name for name, agent in DISCOVERY_AGENTS.items() if _playable(agent, team_size)]
 
 
 DISCOVERY_ORDER: list[str] = list(DISCOVERY_AGENTS)

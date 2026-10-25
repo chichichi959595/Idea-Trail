@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { CombineIcon, LightbulbIcon, ScaleIcon, Trash2Icon } from 'lucide-react'
+import { CombineIcon, LightbulbIcon, ScaleIcon, SearchIcon, Trash2Icon } from 'lucide-react'
 import { useMethodCatalog } from '../useMethodCatalog'
 import {
   IDEA_SIZE_LABELS,
@@ -11,6 +11,7 @@ import {
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
+import { Input } from '@/components/ui/input'
 import {
   Dialog,
   DialogContent,
@@ -100,6 +101,7 @@ export function IdeaLibrary({
 }: Props) {
   const { shortLabelOf } = useMethodCatalog()
   const [viewMode, setViewMode] = useState<ViewMode>('graph')
+  const [query, setQuery] = useState('')
   const [detailId, setDetailId] = useState<number | null>(null)
   const [ticked, setTicked] = useState<number[]>([])
   const [confirmingDelete, setConfirmingDelete] = useState(false)
@@ -110,7 +112,6 @@ export function IdeaLibrary({
   const isTicked = (id: number) => selected.includes(id)
   const toggle = (id: number) =>
     setTicked(isTicked(id) ? selected.filter((x) => x !== id) : [...selected, id])
-  const allTicked = ideas.length > 0 && selected.length === ideas.length
 
   async function confirmDelete() {
     setDeleting(true)
@@ -152,6 +153,17 @@ export function IdeaLibrary({
   const detail = detailId !== null ? ideas.find((i) => i.id === detailId) : undefined
   const sourceLabel = (i: Idea) => (i.is_synthesized ? '整合' : shortLabelOf(i.source_method))
 
+  const needle = query.trim().toLowerCase()
+  const shown = needle
+    ? ideas.filter((i) =>
+        [i.title, i.description, painPointLabel(i.pain_point_id), sourceLabel(i)].some((f) =>
+          f?.toLowerCase().includes(needle),
+        ),
+      )
+    : ideas
+  // Select-all covers what the search shows, as in 痛點庫.
+  const allTicked = shown.length > 0 && shown.every((i) => isTicked(i.id))
+
   const columns: Column<Idea>[] = [
     {
       // Where 場次 used to be: the session number told nobody anything once
@@ -163,7 +175,13 @@ export function IdeaLibrary({
           aria-label={allTicked ? '取消全選' : '全選'}
           checked={allTicked ? true : selected.length > 0 ? 'indeterminate' : false}
           disabled={synthesizing}
-          onCheckedChange={() => setTicked(allTicked ? [] : ideas.map((i) => i.id))}
+          onCheckedChange={() =>
+            setTicked(
+              allTicked
+                ? selected.filter((id) => !shown.some((i) => i.id === id))
+                : [...new Set([...selected, ...shown.map((i) => i.id)])],
+            )
+          }
         />
       ),
       className: 'w-10',
@@ -251,7 +269,7 @@ export function IdeaLibrary({
   ]
 
   return (
-    <Screen wide>
+    <Screen>
       <ScreenHeader
         title="想法庫"
         description="所有場次的想法。關聯圖看誰跟誰相關；表格可以勾選想法來刪除、整合或送去專案收斂。"
@@ -303,14 +321,30 @@ export function IdeaLibrary({
             analyze={{ ...analyze, stale: isStale(ideas, links) }}
           />
         ) : (
-          <DataTable
-            columns={columns}
-            rows={ideas}
-            rowKey={(i) => i.id}
-            onRowClick={(i) => setDetailId(i.id)}
-            isSelected={(i) => isTicked(i.id)}
-            initialSort={{ id: 'created', desc: true }}
-          />
+          <>
+            <div className="relative">
+              <SearchIcon
+                className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground"
+                aria-hidden
+              />
+              <Input
+                value={query}
+                onChange={(e) => setQuery(e.target.value)}
+                placeholder="搜尋想法、痛點或方法"
+                aria-label="搜尋想法"
+                className="pl-9"
+              />
+            </div>
+            <DataTable
+              columns={columns}
+              rows={shown}
+              rowKey={(i) => i.id}
+              onRowClick={(i) => setDetailId(i.id)}
+              isSelected={(i) => isTicked(i.id)}
+              initialSort={{ id: 'created', desc: true }}
+              empty={`沒有符合「${query}」的想法。`}
+            />
+          </>
         )}
 
         {synthesizing && <AiReasoning text={thinking} streaming />}
