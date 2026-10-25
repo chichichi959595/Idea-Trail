@@ -232,7 +232,7 @@ def _clock(run: MethodRun) -> dict:
 
 def _host_state(run: MethodRun, db: DbSession) -> dict:
     # Before the start, the ladder the room will get.
-    rungs = run.relay_rungs or relay.ladder_for(len(run.participants))
+    rungs = run.relay_rungs or relay.DEFAULT_RUNGS
     data = {
         "id": run.id,
         "session_id": run.session_id,
@@ -379,7 +379,7 @@ def start_relay_run(run_id: int, db: DbSession = Depends(get_db)):
             400, f"至少要 {relay.MIN_PARTICIPANTS} 個人才能接龍，現在只有 {n} 個"
         )
 
-    run.relay_rungs = [dict(r) for r in relay.ladder_for(n)]
+    run.relay_rungs = [dict(r) for r in relay.DEFAULT_RUNGS]
     rounds = len(run.relay_rungs)
     by_seat = {p.seat_index: p for p in run.participants}
     for round_index in range(rounds):

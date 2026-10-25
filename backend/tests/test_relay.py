@@ -20,14 +20,14 @@ from app.main import app
 
 @pytest.mark.parametrize("n", [3, 4, 5, 8])
 def test_with_enough_people_nobody_gets_their_own_chain_back(n):
-    rounds = len(relay.ladder_for(n))
+    rounds = len(relay.DEFAULT_RUNGS)
     for seat in range(n):
         held = [relay.chain_for(seat, r, n) for r in range(rounds)]
         assert len(set(held)) == rounds
 
 
 def test_in_a_small_room_a_paper_comes_back_but_never_twice_running():
-    rounds = len(relay.ladder_for(2))
+    rounds = len(relay.DEFAULT_RUNGS)
     for seat in range(2):
         held = [relay.chain_for(seat, r, 2) for r in range(rounds)]
         assert all(a != b for a, b in zip(held, held[1:]))
@@ -35,16 +35,14 @@ def test_in_a_small_room_a_paper_comes_back_but_never_twice_running():
 
 @pytest.mark.parametrize("n", [2, 3, 4, 7])
 def test_every_round_every_chain_has_exactly_one_writer(n):
-    for r in range(len(relay.ladder_for(n))):
+    for r in range(len(relay.DEFAULT_RUNGS)):
         assert sorted(relay.chain_for(s, r, n) for s in range(n)) == list(range(n))
         for c in range(n):
             assert relay.chain_for(relay.seat_for(c, r, n), r, n) == c
 
 
-@pytest.mark.parametrize("n", [2, 3, 6])
-def test_every_room_gets_the_whole_ladder_ending_on_the_pain(n):
-    ladder = relay.ladder_for(n)
-    assert ladder == relay.DEFAULT_RUNGS
+def test_the_ladder_starts_on_the_user_and_ends_on_the_pain():
+    ladder = relay.DEFAULT_RUNGS
     assert ladder[0]["role"] == "who" and ladder[-1]["role"] == "pain"
 
 

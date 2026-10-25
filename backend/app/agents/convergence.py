@@ -114,7 +114,6 @@ _DEBATE_SIDES = {
     ),
 }
 
-DEBATE_MODES = ("dialogue", "analysis")
 DIALOGUE_MAX_CHARS = 80
 """Hard cap on a dialogue line, enforced after the call as well as asked for
 in the prompt — the point of the mode is that a line can be read at a glance."""

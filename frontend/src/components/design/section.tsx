@@ -8,7 +8,7 @@ import {
   type ReactNode,
 } from 'react'
 import { cn } from '@/lib/utils'
-import { Eyebrow, Heading, Small, Title } from './typography'
+import { Small, Title } from './typography'
 
 /**
  * Page and section scaffolding. Every screen is built from these, which is what
@@ -275,35 +275,6 @@ export function Section({ className, children, ...props }: React.ComponentProps<
     <section className={cn('flex flex-col gap-5', className)} {...props}>
       {children}
     </section>
-  )
-}
-
-export function SectionHeader({
-  eyebrow,
-  title,
-  description,
-  actions,
-  className,
-}: {
-  eyebrow?: ReactNode
-  title: ReactNode
-  description?: ReactNode
-  /** Controls that belong to this section, right-aligned on the title row. */
-  actions?: ReactNode
-  className?: string
-}) {
-  return (
-    <div className={cn('flex flex-wrap items-end justify-between gap-x-6 gap-y-3', className)}>
-      <div className="flex min-w-0 flex-col gap-1.5">
-        {eyebrow && <Eyebrow>{eyebrow}</Eyebrow>}
-        <Heading>{title}</Heading>
-        {/* No max-width: the column is already the measure. Capping it again
-            here broke two-line descriptions in the middle of a clause and left
-            a two-character orphan on the second line. */}
-        {description && <Small>{description}</Small>}
-      </div>
-      {actions && <div className="flex shrink-0 items-center gap-2">{actions}</div>}
-    </div>
   )
 }
 

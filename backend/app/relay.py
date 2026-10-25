@@ -11,7 +11,7 @@ from typing import Literal, TypedDict
 
 MIN_PARTICIPANTS = 2
 """One person has nobody to pass a paper to. Two is enough: they play the
-same ladder as everyone else, with papers coming back round — see `ladder_for`."""
+same ladder as everyone else, with papers coming back round — see `DEFAULT_RUNGS`."""
 
 MAX_PARTICIPANTS = 40
 
@@ -46,6 +46,12 @@ def timer_for(round_index: int) -> int:
 # Every rung digs one layer deeper and none asks to revise what is already on
 # the paper — once people start "fixing" the previous layer, every chain gets
 # pulled back into its author's comfort zone.
+#
+# Every room gets the whole ladder, whatever its size. With fewer people than
+# rungs a paper comes back round to someone who has already written on it —
+# it used to be cut short to stop that, but a two-person room then never got
+# past "who", and a second turn on your own line, after someone else has bent
+# it, is fine.
 DEFAULT_RUNGS: list[Rung] = [
     {
         "question": "想一個具體的使用者是誰？越具體越好（例如：夜班護理師、國小代課老師、里幹事）",
@@ -63,18 +69,6 @@ DEFAULT_RUNGS: list[Rung] = [
         "timer_seconds": timer_for(2),
     },
 ]
-
-
-def ladder_for(n_participants: int) -> list[Rung]:
-    """The question ladder for a room of this size.
-
-    Every room gets the whole ladder. With fewer people than rungs a paper
-    comes back round to someone who has already written on it — it used to
-    be cut short to stop that, but a two-person room then never got past
-    "who", and a second turn on your own line, after someone else has bent
-    it, is fine.
-    """
-    return DEFAULT_RUNGS
 
 
 def chain_for(seat_index: int, round_index: int, n: int) -> int:

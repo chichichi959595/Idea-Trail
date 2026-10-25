@@ -186,24 +186,6 @@ export function ErrorState({
   )
 }
 
-/** Card-shaped placeholder for the idea board's first paint. */
-export function CardSkeleton({ className }: { className?: string }) {
-  return (
-    <div className={cn('flex flex-col gap-3 rounded-xl border border-border bg-surface p-4', className)}>
-      <div className="flex items-center justify-between">
-        <Skeleton className="h-4 w-14" />
-        <Skeleton className="h-4 w-16 rounded-full" />
-      </div>
-      <Skeleton className="h-5 w-3/4" />
-      <div className="flex flex-col gap-1.5">
-        <Skeleton className="h-3 w-full" />
-        <Skeleton className="h-3 w-full" />
-        <Skeleton className="h-3 w-2/3" />
-      </div>
-    </div>
-  )
-}
-
 /** Row-shaped placeholder for the method recommendation list. */
 export function RowSkeleton({ className }: { className?: string }) {
   return (

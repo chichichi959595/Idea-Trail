@@ -83,8 +83,6 @@ def eligible_discovery_methods(team_size: int | None) -> list[str]:
     return [name for name, agent in DISCOVERY_AGENTS.items() if _playable(agent, team_size)]
 
 
-DISCOVERY_ORDER: list[str] = list(DISCOVERY_AGENTS)
-
 
 def method_labels() -> dict[str, str]:
     return {

@@ -15,9 +15,6 @@ _PROVIDERS: Dict[str, LLMProvider] = {
     "codex": CodexProvider(),
 }
 
-DEFAULT_PROVIDER = "claude"
-
-
 def get_provider(name: str) -> LLMProvider:
     try:
         return _PROVIDERS[name]

@@ -241,7 +241,7 @@ def build_prompt(session: IdeationSession, pain_point: PainPoint | None = None) 
     has_pain_point = pain_point is not None
     scores = score_methods(session, has_pain_point=has_pain_point)
     suggestion = rank_methods(session, has_pain_point=has_pain_point)
-    labels, descriptions = method_labels(), method_descriptions()
+    labels = method_labels()
 
     suggestion_block = "\n".join(
         f"{rank}. {m}（{labels[m]}）— 規則分數 {scores[m]}"

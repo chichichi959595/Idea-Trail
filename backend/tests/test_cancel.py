@@ -17,7 +17,6 @@ import json
 
 from app.api import method_runs
 from app.api.cancel import Cancelled, cancel_scope, request_cancel, stop_on_cancel
-from app.db.models import MethodRun
 from app.db.session import get_db
 from app.main import app
 from app.providers import registry
